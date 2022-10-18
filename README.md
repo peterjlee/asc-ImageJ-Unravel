@@ -5,11 +5,11 @@
  The method originates in an idea proposed by Jeremy Adler (jeremy.adler==at==IGP.UU.SE) from an imageJ mailing list post on Monday, August 15, 2022 4:17 AM
  <br />
 <p>We would like to extract the surface roughness from cross-sectional images like the one shown below:</p>
-<p><img src="/images/asc-Unravel_RoughnessInterfaceSchematic_387w.png" alt="Interface schematic to show the problem to be solved by the Unravel macro" height="371" /> </p>
+<p><img src="/images/asc-Unravel_RoughnessInterfaceSchematic_387w.png" alt="Interface schematic to show the problem to be solved by the Unravel macro" height="51" /> </p>
 
 The "Unravel" macro can obtain a sequence of perimeter points that can be used as a profile and then Radial "Heights" can be obtained relative to the object center or any other reference point (or polar coordinates can be used). A 32-bit pseudo-height map can then be exported from the macro so that it can then be imported into dedicated surface roughness software analysis software like Gwyddion, enabling a comprehensive roughness analysis.
 
-<p><img src="/images/asc-Unravel_pHMap_512w.png" alt="Pseudo-height-map generated for a filament corss-section by the Unravel macro." height="512" /> </p>
+<p><img src="/images/asc-Unravel_pHMap_512w.png" alt="Pseudo-height-map generated for a filament cross-section by the Unravel macro." height="512" /> </p>
 
 <br />
   <p>Sampling length is important for extracting roughness values and sample length can be derived from the overall shape or the cumulative pixel=pixel distance:</p>
