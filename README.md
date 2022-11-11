@@ -29,10 +29,11 @@ The "Unravel" macro can obtain a sequence of perimeter points that can be used a
 
 <p>A pseudo-height map can be generated for import into dedicatedsurface analysis software:</p>
 
-<p><img src="/images/Gwyddion_import_example_417w.png" alt="Height referencing" width="417" /> </p>
+<p><img src="/images/asc-Unravel_pHMap_512w.png" alt="Height referencing" width="512" /> </p>
 
 <p>The generated 32-bit height maps can be imported into Gwyddion for analysis:</p>
 <p><img src="/images/Gwyddion_import_example_417w.png" alt="Gwyddion analysis of pseudo-height-map." width="417" /> </p>
+<p><img src="/images/Unravel_Gwyddion-CircOutline_screenshot_764w.png" alt="Gwyddion projection" width="764" /> </p>
 <p>Enabling a comprehensive roughness analysis:</p>
 <p><img src="/images/Unravel_GwyddionAnalysis_1101w.png" alt="Gwyddion analysis of pseudo-height-map." width="1101" /> </p>
 <br />
