@@ -2,114 +2,140 @@
 	It is assumed that a pixel-width outline has already been created.
 	Inspired by an idea proposed by Jeremy Adler <jeremy.adler@IGP.UU.SE> from an imageJ mailing list post on Monday, August 15, 2022 4:17 AM
 	v220825 1st version.
-	v221003 Adds option to create pseudo-height map for analysis in 3D analysis software like Gwyddion. Also report for sampling length based in shape
-	v221004 Replaces "None" with "Total_pixel-pixel_length" in sample length options
-	v221005 Default median smoothing radius determined from initial bounding box. Aspected pixel fix. Smoothed image can be generated independent of ref length.
+	v221003 Adds option to create pseudo-height map for analysis in 3D analysis software like Gwyddion. Also report for evaluation length based in shape
+	v221004 Replaces "None" with "Total_pixel-pixel_length" in evaluation length options
+	v221005 Default median smoothing radius determined from initial bounding box. Map now has square pixels. Smoothed image can be generated independent of ref length. More reference location options.
+	v221014 Restored ability to analyze line segments.
+	v221107 Skeletonize is optional.
+	v221108 Added initial menu to simplify instructions. Replaced sample length terminology with evaluation length to avoid confusion with sampling length. Added additional output columns.
+	v221110 Outputs information about non-sequenced pixels (those that were missed from the continuous line because they were not the closest adjacent pixel in the search order.
+	v221111 Evaluation lengths and highlighting of non-sequenced pixels are now shown as overlays on the pixel-sequence map if there are any non-sequenced pixels (even if the map was not requested).
 */
-	macroL = "Unravel_interface_v221005.ijm";
+	macroL = "Unravel_interface_v221111.ijm";
+	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
-	if (!is("binary")){
-		if(getBoolean("This macro expects a binary image, would you like to try a apply a quick fix?")) toWhiteBGBinary(oTitle);
+	nTitle = stripKnownExtensionFromString(oTitle);
+	nTitle += "_unrav";
+	run("Duplicate...", "title=&nTitle ignore");
+	if (!is("binary") || is("Inverting LUT") || getPixel(0,0)==0){
+		if(getBoolean("This macro expects a binary image with white background, would you like to try a apply a quick fix?")) toWhiteBGBinary(nTitle);
 		else ("Goodbye");
 	}
-	oImageW = Image.width;
-	oImageH = Image.height;
+	tempID = getImageID();
+	getDimensions(oImageW, oImageH, oChannels, oSlices, oFrames);
+	run("Select None");
 	run("Create Selection");
 	getSelectionBounds(minX, minY, widthS, heightS);
-	if(minX + widthS==oImageW || minY + heightS==oImageH){
-		if(getBoolean("This macro expects an object that is not touching the edge; would you like to expand the canvas?")) run("Canvas Size...", "width=" + (oImageW+2) + " height=" + (oImageH+2) + " position=Center");
-		else exit("Goodbye");
-	}
-	defMedR = round((widthS + heightS)/(10*PI));
-	bBoxX = minX + widthS/2;
-	bBoxY = minY + heightS/2;
+	/* The following section helps classify the object */
+	pArea = getValue("Area raw");
+	oSolidity = getValue("Solidity");
+	oAR = getValue("AR");
+	oAngle = getValue("Angle");
+	pPerimeter = getValue("Perim. raw");
 	run("Select None");
-	nTitle = stripKnownExtensionFromString(oTitle);
+	run("Fill Holes");
+	getRawStatistics(nPixels, meanPx, minPx, maxPx);
+	pFArea = (maxPx/meanPx-1)*nPixels;
+	run("Undo");
+	if (pFArea/pArea>2) objectType = "Continuous_outline";
+	else if (oSolidity<0.125){
+		if (widthS>heightS) objectType = "Horizontal_line";
+		else objectType = "Vertical_line";
+	}
+	else if (pFArea/pArea<1.1 || oSolidity>0.5)	objectType = "Solid_object";
+	else objectType = "Something_else";
+	if (objectType=="Solid_object") safeBuffer = round(pPerimeter/20);
+	else {
+		run("Create Selection");
+		setOption("BlackBackground", false);
+		run("Skeletonize");
+		pPerimeter = getValue("Perim. raw");
+		pArea = getValue("Area raw");
+		run("Undo");
+		safeBuffer = round(pArea/20);
+		run("Select None");
+	}
+	if (safeBuffer>oImageW && safeBuffer>oImageH) exit("Problem with safeBuffer size \(" + safeBuffer + "\)");
+	/* Make sure canvas is large enough to accommodate any smoothing or fits */
+	if (minX<safeBuffer/2 || (oImageW-(minX+widthS))<safeBuffer/2) newWidth = safeBuffer+oImageW;
+	else newWidth = oImageW;
+	if (minY<safeBuffer/2 || (oImageH-(minY+heightS))<safeBuffer/2) newHeight = safeBuffer+oImageH;
+	else newHeight = oImageH;
+	if (newHeight!=oImageH || newWidth!=oImageW)	expCanvas = true; /* Could use as a contraction flag for a future option */
+	else expCanvas = false;
+	if (expCanvas) run("Canvas Size...", "width=&newWidth height=&newHeight position=Center");
+	run("Create Selection");
+	pX = getValue("X raw");
+	pY = getValue("Y raw");
+	run("Select None");
+	getDimensions(imageW, imageH, oChannels, oSlices, oFrames);
 	getPixelSize(unit, pixelWidth, pixelHeight);
 	lcf=(pixelWidth+pixelHeight)/2; /* ---> add here the side size of 1 pixel in the new calibrated units (e.g. lcf=5, if 1 pixels is 5mm) <--- */
-	getDimensions(oWidth, oHeight, oChannels, oSlices, oFrames);
-	objectTypes = newArray("Continuous_Outline","Solid_object","Something_else");
-	refLengths = newArray("Total_pixel-pixel_length","Circle_perimeter","Ellipse_perimeter","Object_Perimeter","Median_smoothed_object_perimeter");
+	objectTypes = newArray("Continuous_outline","Solid_object","Horizontal_line","Vertical_line","Something_else");
+	setBatchMode("exit and display");
 	Dialog.create("Unraveling options 1: \(" + macroL + "\)");
-		Dialog.addMessage("This macro currently only works on a single solid object or continuous outline",11,"red");
+		Dialog.addMessage("This macro currently only works on individual objects of the types listed below:");
 		if(oChannels+oSlices+oFrames!=3) Dialog.addMessage("Warning: This macro has only been tested on single slice-frame-channel images",12,"red");
-		Dialog.addRadioButtonGroup("Object type:",objectTypes,objectTypes.length,1,objectTypes[1]);
-		Dialog.addRadioButtonGroup("Output sampling length:",refLengths,refLengths.length,1,refLengths[2]);
-		Dialog.addCheckbox("Create pseudo-height map from interface",true);
-		Dialog.addCheckbox("Create median smoothed object \(i.e. physical waviness\)",true);
-		Dialog.addNumber("Median radius for smoothed surface length",defMedR,0,4,"pixels");
-		Dialog.addCheckbox("Diagnostics",false);
+		Dialog.addRadioButtonGroup("Object type:",objectTypes,objectTypes.length,1,objectType);
+		Dialog.addMessage("Identified object type: " + objectType+ "  from:\nTotal pixels: " + pArea + "\nBlack pixels after fill: " + pFArea + "\nAspect ratio: " + oAR + "\nPerimeter: " + pPerimeter + " pixels\nSolidity: " + oSolidity + "\nAngle: " + oAngle);
 	Dialog.show;
 		objectType = Dialog.getRadioButton();
-		refLength = Dialog.getRadioButton();
-		hMap = Dialog.getCheckbox();
-		smoothKeep = Dialog.getCheckbox();
-		smoothN = Dialog.getNumber();
-		diagnostics = Dialog.getCheckbox();
 	if (objectType=="Something_else") exit("Sorry, I am not ready for 'something else' yet");
+	if (startsWith(objectType,"Continuous") || startsWith(objectType,"Solid")) continuous = true;
+	else continuous = false;
+	if (!endsWith(objectType,"_line")){
+		refLengths = newArray("Total_pixel-pixel_length","Ellipse_perimeter","Circle_perimeter","Object_perimeter","Median-smooth_object_perimeter");
+		defRef = 1;
+	}
+	else{
+		refLengths = newArray("Total_pixel-pixel_length","First-to-last-in-sequence_distance", "Sub-sample_spline-fit");
+		defRef = 2;
+	}
+	smoothKeep = false;
+	smoothN = 0;
+		Dialog.create("Unraveling options 2 \(" + macroL + "\)");
+		Dialog.addRadioButtonGroup("Output evaluation length \(used for map scale\):",refLengths,refLengths.length,1,refLengths[defRef]);
+		if (startsWith(objectType, "Solid")) defSmoothN = minOf(100,round(pPerimeter/20)); /* median smoothing limited to max of 100 */
+		else defSmoothN = minOf(100,round(pArea/20)); /* median smoothing limited to max of 100 */
+		if (!endsWith(objectType,"_line")){
+			Dialog.addCheckbox("Create median smoothed object \(i.e. physical waviness\)",false);
+			Dialog.addNumber("Radius for median smoothing",defSmoothN,0,4,"pixels \(max 100\)");
+			if (startsWith(objectType, "Solid")) mText = "Default median radius of " + defSmoothN + " pixels based on 10% of original perimeter \(" + pPerimeter + " pixels\)";
+			else mText = "Default median radius of " + defSmoothN + " pixels based on 5% of original perimeter \(" + pArea + " pixels\)";
+			if (defSmoothN==100) mText += ", limited to a maximum of 100";
+			Dialog.addMessage(mText);
+		}
+		else {
+			Dialog.addNumber("Sub-sample interval for spline",defSmoothN,0,4,"pixels");
+			Dialog.addMessage("Default interval of " + defSmoothN + " pixels based on 10% of original pixels in line\n");
+		}
+		/* Fewer outline-skeletonized pixels will be missed from the unravel sequence, so skeletonizing the line/outline is the default setting: */
+		Dialog.addCheckbox("Skeletonize outline/interface line \(could remove significant pixels\)",true); /* removes redundant pixels . . . but are they? */
+		Dialog.addCheckbox("Create pseudo-height map from interface",true);
+		Dialog.addCheckbox("Diagnostics",false);
+	Dialog.show;
+		refLength = Dialog.getRadioButton();
+		if (!endsWith(objectType,"_line")) smoothKeep = Dialog.getCheckbox();
+		smoothN = minOf(100,Dialog.getNumber());
+		skelGo = Dialog.getCheckbox();
+		hMap = Dialog.getCheckbox();
+		diagnostics = Dialog.getCheckbox();
 	if(!diagnostics) setBatchMode(true);
-	run("Duplicate...", "title=unRavel_temp");
-	run("Convert to Mask");
-	if (is("Inverting LUT")) run("Invert LUT");
-	medianBGIs = guessBGMedianIntensity();
-	medianBGI = round((medianBGIs[0]+medianBGIs[1]+medianBGIs[2])/3);
-	if (medianBGI==0) run("Invert");
+	selectImage(tempID);
+	if (startsWith(objectType,"Solid")) run("Outline");
+	if (skelGo) run("Skeletonize");
 	run("Select None");
-	dID = getImageID();
-	if(refLength!="Total_pixel-pixel_length"){
-		run("Select None");
-		run("Duplicate...", "title=refLength_temp");
-		run("Fill Holes");  /* allows rest to work with outline or solid object */
-		if(refLength=="Ellipse_perimeter" || refLength=="Circle_perimeter"){
-			run("Create Selection");
-			if(refLength=="Ellipse_perimeter")	run("Fit Ellipse");
-			else {
-				run("Fit Circle");
-				getSelectionBounds(null, null, diameter, null);
-				lRef = lcf * 2 * PI * diameter/2;
-			}
-		}
-		else if(startsWith(refLength,"Median")){
-			run("Median...", "radius=&smoothN");
-			medianT = nTitle + "_median" + smoothN;
-			rename(medianT);
-			run("Create Selection");
-		}
-		else run("Create Selection");
-		getSelectionBounds(fMinX, fMinY, fWidthS, fHeightS);
-		fBoxX = fMinX + fWidthS/2;
-		fBoxY = fMinY + fHeightS/2;
-		if(refLength!="Circle_perimeter"){
-			run("Clear", "slice");
-			run("Invert");
-			run("Clear Outside");
-			List.setMeasurements;
-			// print(List.getList); // list all measurements
-			lRef = List.getValue("Perim.");
-		}
-		run("Select None");
-		if (!diagnostics) closeImageByTitle("refLength_temp");
-	}
-	selectImage(dID);
-	if(!startsWith(refLength,"Median") && smoothKeep){
-		/* A smoothed image may be wanted for determination of physical waviness, while the reference length could be something else */ 
-		run("Select None");
-		medianT = nTitle + "_median" + smoothN;
-		run("Duplicate...", "title="+medianT);
-		run("Median...", "radius=&smoothN");
-	}
-	selectImage(dID);
-	if (objectType!="Outline") run("Outline");
-	run("Skeletonize");
-	// run("Select None");
-	// call("Versatile_Wand_Tool.doWand", 0, 0, 0.0, 0.0, 0.0, "8-connected");
-	// run("Make Inverse");
+	refLTitle = nTitle + "_RefLength_temp";
+	run("Duplicate...", "title=&refLTitle ignore");
+	procTitle = nTitle + "_as-processed";
+	run("Duplicate...", "title=&procTitle ignore");
+	selectImage(tempID);
 	run("Create Selection");
 	getSelectionBounds(minBX, minBY, widthB, heightB);
+	pArea  = getValue("Area raw");
 	maxBX = minBX + widthB;
 	maxBY = minBY + heightB;
-	mostPixels = widthB*heightB;
 	run("Select None");
 	xSeqCoords = newArray();
 	ySeqCoords = newArray();
@@ -119,26 +145,36 @@
 	for(leftX=minBX,done=false;leftX<maxBX+1 && !done; leftX++){
 		for(leftY=minBY;leftY<maxBY+1 && !done; leftY++) if (getPixel(leftX,leftY)!=255)	done = true;
 	}
-	startCoordOptions = newArray("Top pixel \("+topX+","+topY+"\)","Left  pixel \("+leftX+","+leftY+"\)","Manual entry");
-	Dialog.create("Unraveling options 2: \(" + macroL + "\)");
-		Dialog.addRadioButtonGroup("Starting point:",startCoordOptions,startCoordOptions.length,1,startCoordOptions[1]);
+	startCoordOptions = newArray("Manual entry");
+	if (objectType=="Horizontal_line") startCoordOptions = Array.concat("Left  pixel \("+leftX+","+leftY+"\)",startCoordOptions);
+	else if (objectType=="Vertical_line") startCoordOptions = Array.concat("Top pixel \("+topX+","+topY+"\)",startCoordOptions);
+	else startCoordOptions = Array.concat("Left  pixel \("+leftX+","+leftY+"\)","Top pixel \("+topX+","+topY+"\)",startCoordOptions);
+	Dialog.create("Unraveling options 3: \(" + macroL + "\)");
+		Dialog.addRadioButtonGroup("Starting point:",startCoordOptions,startCoordOptions.length,1,startCoordOptions[0]);
 		Dialog.addNumber("Manual start x",0,0,3,"pixels");
 		Dialog.addNumber("Manual start y",0,0,3,"pixels");
 		Dialog.addNumber("Pixel search range in plus and minus pixels",6,0,3,"pixels");
-		Dialog.addCheckbox("Is outline continuous \(i.e. a circle\)?",true);
-		Dialog.addCheckbox("Try to start clockwise",true);
-		Dialog.addCheckbox("Create map to show pixel sequence",true);
-		Dialog.addCheckbox("Output rotational sequence values",false);
+		if (!endsWith(objectType,"_line")){
+			Dialog.addCheckbox("Try to start clockwise?",true);
+			Dialog.addCheckbox("Output rotational sequence values",continuous);
+		}
+		Dialog.addCheckbox("Keep image showing pixel sequence and spline fit",true);
 	Dialog.show;
 		startCoordOption = Dialog.getRadioButton();
 		x = Dialog.getNumber();
 		y = Dialog.getNumber();
 		kernelR = Dialog.getNumber();
-		continuous = Dialog.getCheckbox();
-		clockwise = Dialog.getCheckbox();
-		showPixelSequence = Dialog.getCheckbox();
-		angleOut = Dialog.getCheckbox();
-	setBatchMode(true);
+		if (!endsWith(objectType,"_line")){
+			clockwise = Dialog.getCheckbox();
+			angleOut = Dialog.getCheckbox();
+		}
+		else {
+			clockwise = false;
+			angleOut = false;
+		}
+		keepPixelSequence = Dialog.getCheckbox();
+	if (!diagnostics) setBatchMode(true);
+	// getRawStatistics(nPixels, meanPx, minPx, maxPx);
 	if (startsWith(startCoordOption,"Top")){
 		x = topX;
 		y = topY;
@@ -175,26 +211,29 @@
 	done = false;
 	xSeqCoords[0] = x;
 	ySeqCoords[0] = y;
-	setPixel(x,y,255);
+	selectWindow(nTitle);
+	setPixel(x,y,255); /* Removes start pixel from search */
 	nSearchPxls = xSearchPxls.length;
-	for(i=1,k=0; i<mostPixels-1 && !done; i++){
+	for(i=1,k=0; i<pArea -1 && !done; i++){
 		for(j=0,gotPix=false; j<nSearchPxls+1 && !gotPix; j++){
 			if(j==nSearchPxls) done = true;
 			else{
 				testX = xSeqCoords[k] + xSearchPxls[j];
 				testY = ySeqCoords[k] + ySearchPxls[j];
 				testI = getPixel(testX,testY);
-				if (testI==0){
+				if (testI<1){
 					k++;
 					xSeqCoords[k] = testX;
 					ySeqCoords[k] = testY;
-					setPixel(xSeqCoords[k],ySeqCoords[k],255);
-					if (diagnostics) print(k,xSeqCoords[k],ySeqCoords[k]);
+					newI = 20 + k*180/pArea;
+					setPixel(xSeqCoords[k],ySeqCoords[k],newI); /* removes found contiguous pixel from search */
+					if (diagnostics) print(k,newI,xSeqCoords[k],ySeqCoords[k]);
 					gotPix = true;
 				}
 			}
 		}
 	}
+	updateDisplay();
 	Array.getStatistics(xSeqCoords, xSeqCoords_min, xSeqCoords_max, xSeqCoords_mean, xSeqCoords_stdDev);
 	Array.getStatistics(ySeqCoords, ySeqCoords_min, ySeqCoords_max, ySeqCoords_mean, ySeqCoords_stdDev);
 	seqPixN = xSeqCoords.length;
@@ -227,16 +266,88 @@
 	for (i=1;i<seqPixN;i++) xDistancesTotal[i] = xDistancesTotal[i-1] + xDistances[i];
 	if(lcf!=1) for (i=1;i<seqPixN;i++) xSDistancesTotal[i] = lcf * xDistancesTotal[i];
 	Array.getStatistics(xDistancesTotal, xDistancesTotal_min, xDistancesTotal_max, xDistancesTotal_mean, xDistancesTotal_stdDev);
+	/* The following section provides an estimate of the total evaluation length */
+	selectWindow(refLTitle);
 	if(refLength=="Total_pixel-pixel_length") lRef = xDistancesTotal_max;
+	else if(startsWith(refLength,"First-to-last")) lRef = lcf * sqrt(pow(xSeqCoords[0]-xSeqCoords[seqPixN-1],2) + pow(ySeqCoords[0]-ySeqCoords[seqPixN-1],2));
+	else if(startsWith(refLength,"Sub-sample_spline-fit")){
+		seqSubN = round(seqPixN/smoothN);
+		subLXs = Array.resample(xSeqCoords,seqSubN);
+		subLYs = Array.resample(ySeqCoords,seqSubN);
+		if(diagnostics){
+			IJ.log("subsampled line x and y coordinates for approximate evaluation length");
+			Array.print(subLXs);
+			Array.print(subLYs);
+		}
+		makeSelection("sub-sampled line", subLXs,subLYs);
+		run("Fit Spline");
+		lRef = getValue("Length");
+		if(lRef==NaN){  /* if spline fit does not work . . .  */
+			IJ.log("Spline fit fail; total sub-sampled point-point distances used for evaluation length");
+			x1 = subLXs[0];
+			y1 = subLYs[0];
+			for(i=0,lRef=0;i<subLXs.length-1;i++){
+				x2 = subLXs[i+1];
+				y2 = subLYs[i+1];
+				lRef += sqrt(pow(x2-x1,2) + pow(y2-y1,2));
+				x1 = x2;
+				y1 = y2;
+			}
+			if(lcf!=1) lRef*= lcf;
+		}
+		run("Select None");
+		selectWindow(nTitle);
+		run("Restore Selection");
+		Overlay.addSelection("#66FF66", minOf(1,maxOf(2,(imageW+imageH)/400)));
+		nTitle += "+RefLength";
+		rename(nTitle);
+		run("Select None");
+	}
+	else {
+		selectWindow(refLTitle);
+		run("Fill Holes");  /* allows rest to work with outline or solid object */
+		if(refLength=="Ellipse_perimeter" || refLength=="Circle_perimeter"){
+			run("Create Selection");
+			if(refLength=="Ellipse_perimeter")	run("Fit Ellipse");
+			else run("Fit Circle");
+			lRef = getValue("Perim.");
+			run("Select None");
+		}
+		else if(startsWith(refLength,"Median") || smoothKeep){
+			run("Median...", "radius=&smoothN");
+			medianT = nTitle + "_median" + smoothN;
+			if(smoothKeep) run("Duplicate...", "title=&medianT ignore");
+			run("Create Selection");
+			if(startsWith(refLength,"Median")) lRef = getValue("Perim.");
+		}
+		else run("Create Selection");
+		getSelectionBounds(fMinX, fMinY, fWidthS, fHeightS);
+		fBoxX = fMinX + fWidthS/2;
+		fBoxY = fMinY + fHeightS/2;
+		if(refLength=="Horizontal_distance") lRef = lcf * fWidthS;
+		else if(refLength=="Vertical_distance") lRef = lcf * fHeightS;
+		else if(refLength!="Ellipse_perimeter" && refLength!="Circle_perimeter" && !startsWith(refLength,"Median")){
+			run("Create Selection");
+			run("Clear", "slice");
+			run("Invert");
+			run("Clear Outside");
+			List.setMeasurements;
+			// print(List.getList); // list all measurements
+			lRef = List.getValue("Perim.");
+		}
+		run("Select None");
+		selectWindow(nTitle);
+		run("Restore Selection");
+		Overlay.addSelection("#66FF66", minOf(1,maxOf(2,(imageW+imageH)/400)));
+		nTitle += "+RefLength";
+		rename(nTitle);
+		run("Select None");
+	}
 	lName = replace(refLength,"_"," ");
-	if(startsWith(refLength,"Median")) {
-		lName = replace(lName,"Median smoothed","Median \("+smoothN+" pixel radius\) smoothed");
-		if (!smoothKeep) closeImageByTitle(medianT);
-	}	
 	IJ.log("For " + oTitle + ":\n" + lName + " = " + lRef + " " + unit);
 	if(continuous){
-		refLocs = newArray("Sequential_pixel_centroid","Bounding_box_center","Image_center");
-		dimensionsText = "Sequential pixel centroid: x = " + xSeqCoords_mean + ", y = " + ySeqCoords_mean + "\nBounding box center: x = " + bBoxX + ", y = " + bBoxY+ "\nImage center: x = " + oImageW/2 + ", y = " + oImageH/2;
+		refLocs = newArray("Sequential_pixel_centroid","Object_center","Image_center");
+		dimensionsText = "Sequential pixel centroid: x = " + xSeqCoords_mean + ", y = " + ySeqCoords_mean + "\nObject center: x = " + pX + ", y = " + pY+ "\nImage center: x = " + imageW/2 + ", y = " + imageH/2;
 		Dialog.create("Height reference coordinate \(" + macroL + "\)");
 			if(refLength!="Total_pixel-pixel_length"){
 				refLocs = Array.concat(refLocs,"Reference_shape_center");
@@ -245,97 +356,155 @@
 			}
 			refLocs = Array.concat(refLocs,"Arbitrary_coordinates");
 			Dialog.addMessage(dimensionsText);
-			Dialog.addRadioButtonGroup("Reference location for height:",refLocs,refLocs.length,1,refLocs[0]);
+			Dialog.addRadioButtonGroup("Reference location for height:",refLocs,refLocs.length,1,refLocs[1]);
 			Dialog.addNumber("Arbitrary x", 0,0,10,"pixels");
 			Dialog.addNumber("Arbitrary y", 0,0,10,"pixels");
+			Dialog.addString("Table compatible name for distance to reference \(i.e. 'Height'\)","Height",10);
 		Dialog.show;
 			refLoc = Dialog.getRadioButton();
 			xRef = Dialog.getNumber();
 			yRef = Dialog.getNumber();
+			distName = Dialog.getString;
+			if (distName=="") distName = "Height";
 		if (startsWith(refLoc,"Sequential")){
 			xRef = xSeqCoords_mean;
-			yRef = ySeqCoords_mean;	
+			yRef = ySeqCoords_mean;
+		}
+		else if (startsWith(refLoc,"Object")){
+			xRef = pX;
+			yRef = pY;
 		}
 		else if (startsWith(refLoc,"Image")){
 			xRef = oImageW/2;
-			yRef = oImageH/2;	
+			yRef = oImageH/2;
 		}
 		else if (startsWith(refLoc,"Bounding")){
 			xRef = bBoxX;
-			yRef = bBoxY;	
+			yRef = bBoxY;
 		}
 		else if (startsWith(refLoc,"Reference")){
 			xRef = fBoxX;
-			yRef = fBoxY;	
+			yRef = fBoxY;
 		}
-		yDistances = newArray();
-		for (i=0;i<seqPixN;i++) yDistances[i] = pow((pow(xSeqCoords[i]-xRef,2) + pow(ySeqCoords[i]-yRef,2)),0.5);
-		Array.getStatistics(yDistances, yDistances_min, yDistances_max, yDistances_mean, yDistances_stdDev);
-		yRelDistances = newArray();
-		for (i=0;i<seqPixN;i++) yRelDistances[i] = yDistances[i] - yDistances_min;
-		if(lcf!=1){
-			ySRelDistances = newArray();
-			for (i=0;i<seqPixN;i++) ySRelDistances[i] = lcf * yRelDistances[i];
+	}
+	else if (endsWith(objectType,"_line")) {
+		xRef = xSeqCoords_min;
+		yRef = ySeqCoords_min;
+		if (startsWith(objectType,"Vert")) distName = "Horiz_dist";
+		else if (startsWith(objectType,"Horiz")) distName = "Vert_dist";
+		else distName = "Height";
+	}
+	else exit("Unidentified reference location");
+	IJ.log("Reference locations: x = " + xRef + ", y = " + yRef);
+	relDistances = newArray();
+	if (startsWith(objectType,"Vert")) for (i=0;i<seqPixN;i++) relDistances[i] = xSeqCoords[i];
+	else if (startsWith(objectType,"Horiz")) for (i=0;i<seqPixN;i++) relDistances[i] = imageH - ySeqCoords[i]; /* correct to make increasing height upwards */
+	else for (i=0;i<seqPixN;i++) relDistances[i] = pow((pow(xSeqCoords[i]-xRef,2) + pow(ySeqCoords[i]-yRef,2)),0.5);
+	Array.getStatistics(relDistances, relDistances_min, relDistances_max, relDistances_mean, relDistances_stdDev);
+	normRelDistances = newArray();
+	normRelDistSqs = newArray();
+	for (i=0;i<seqPixN;i++){
+		normRelDistances[i] = relDistances[i] - relDistances_min;
+		normRelDistSqs[i] = pow(normRelDistances[i],2);
+	}
+	if(lcf!=1){
+		sNormRelDistances = newArray();
+		sNormRelDistSqs = newArray();
+		for (i=0;i<seqPixN;i++){
+			sNormRelDistances[i] = lcf * normRelDistances[i];
+			sNormRelDistSqs[i] = pow(sNormRelDistances[i],2);
 		}
+		fAmps = Array.fourier(sNormRelDistances);
 	}
 	Table.setColumn("Seq_coord_x", xSeqCoords);
 	Table.setColumn("Seq_coord_y", ySeqCoords);
 	Table.setColumn("Seq_dist\(px\)", xDistancesTotal);
 	if(lcf!=1) Table.setColumn("Seq_dist\("+unit+"\)", xSDistancesTotal);
 	if(continuous){
-		Table.setColumn("Rel_dist\(px\)", yDistances);
-		Table.setColumn("Rel_dist_norm\(px\)", yRelDistances);
-		if(lcf!=1) Table.setColumn("Rel_dist_norm\("+unit+"\)", ySRelDistances);
+		Table.setColumn(distName + "\(px\)", relDistances);
+		Table.setColumn(distName + "_norm\(px\)", normRelDistances);
+		if(lcf!=1){
+			Table.setColumn(distName + "_norm\("+unit+"\)", sNormRelDistances);
+			Table.setColumn(distName + "_norm^2\("+unit+"^2\)",sNormRelDistSqs);
+		}
+		else Table.setColumn(distName + "_norm^2",normRelDistSqs);
 		if(angleOut){
 			Table.setColumn("Angle \(radians\)",radianAngles);
 			Table.setColumn("Angle Offset \(radians\)",radianOffsets);
 			Table.setColumn("Angle Offset \(degrees\)",degreeOffsets);
 		}
 	}
-	if(showPixelSequence || diagnostics){
-		for (i=0,j=0;i<seqPixN;i++){
-			setPixel(xSeqCoords[i],ySeqCoords[i],j);
-			if (j>240) j=1;
-			j++;
+	else {
+		Table.setColumn(distName + "\(px\)", relDistances);
+		Table.setColumn(distName + "_norm\(px\)", normRelDistances);
+		if(lcf!=1){
+			Table.setColumn(distName + "_norm\("+unit+"\)", sNormRelDistances);
+			Table.setColumn(distName + "_norm^2\("+unit+"^2\)", sNormRelDistSqs);
 		}
-		rename(nTitle + "_pixelSequenceMap");
+		else Table.setColumn(distName + "_norm^2",normRelDistSqs);
 	}
-	else if(!diagnostics) closeImageByTitle("unRavel_temp");
-	Array.getStatistics(ySRelDistances, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
-	IJ.log("_________\n" + nTitle + " height statistics:\nmin = " + hStat_min + " " + unit + "\nmax = " + hStat_max + " " + unit + "\nrange = " + hStat_max-hStat_min + " " + unit +"\nmean = " + hStat_mean + " " + unit + "\nstd Dev = " + hStat_stdDev + " " + unit + "\nHavg/l = " + hStat_mean/lRef + "\n_________");
+	if(lcf!=1) Table.setColumn("Fourier_amps", fAmps);
+	if(lcf!=1){
+		Array.getStatistics(sNormRelDistances, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
+		Array.getStatistics(sNormRelDistSqs, null, null, hSq_mean, null);
+		IJ.log("_________\n" + nTitle + " height statistics:\nmin = " + hStat_min + " " + unit + "\nmax = " + hStat_max + " " + unit + "\nrange = " + hStat_max-hStat_min + " " + unit +"\nmean = " + hStat_mean + " " + unit + "\nstd Dev = " + hStat_stdDev + " " + unit + "\nRa\(full length) = " + hStat_mean  + " " + unit + "\nRq\(full length\) = " + sqrt(hSq_mean)  + " " + unit +  "\n_________");
+	}
 	if (hMap){
-		Dialog.create("Height map options");
+		Dialog.create("Height map options: " + macroL);
+			Dialog.addNumber("Evaluation length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
-			Dialog.addNumber("subsampling:",maxOf(1,round(seqPixN/4000)),0,10,"");
-			Dialog.addCheckbox("Map should be saved as uncompressed TIFF; go ahead?",true);	
+			Dialog.addNumber("Sub-sample measurements \(1 = none\):",maxOf(1,round(seqPixN/4000)),0,10,"");
+			Dialog.addCheckbox("Map should be saved as uncompressed TIFF; go ahead?",true);
 		Dialog.show();
+			lRef = Dialog.getNumber();
 			hMapN = Dialog.getNumber();
-			subSamN = round(Dialog.getNumber());
+			subSamN = maxOf(1,round(Dialog.getNumber()));
 			saveTIFF = Dialog.getCheckbox();
 		subSeqPixN = round(seqPixN/subSamN);
 		newImage("tempHMap", "32-bit black", subSeqPixN, 1, 1);
 		for(i=0,j=0,k=0; i<seqPixN; i++){
 			if (j==subSamN){
-				setPixel(k,0,ySRelDistances[i]);
+				if(lcf!=1) setPixel(k,0,sNormRelDistances[i]);
+				else setPixel(k,0,normRelDistances[i]);
 				k++;
 				j=0;
 			}
 			j++;
 		}
-		run("Size...", "width="+subSeqPixN+" height="+hMapN+" depth=1 interpolation=None");
-		run("Set Scale...", "distance="+subSeqPixN+" known="+lRef+" pixel=1 unit="+unit);
+		run("Size...", "width=" + subSeqPixN + " height=" + hMapN + " depth=1 interpolation=None");
+		run("Set Scale...", "distance=" + subSeqPixN + " known=" + lRef + " pixel=1 unit=" + unit);
 		run("Enhance Contrast...", "saturated=0"); /* required for viewable 32-bit Fiji image */
 		rename(nTitle + "_hMap");
 		closeImageByTitle("tempHMap");
 		if(saveTIFF) saveAs("Tiff");
 	}
+	selectImage(tempID);
+	getRawStatistics(nPixels, meanPx, minPx, maxPx);
+	if (minPx==0){
+		selectWindow(nTitle);
+		run("Create Selection");
+		pArea = getValue("Area raw");
+		IJ.log("Warning: " + pArea + " non-Sequenced pixels\n____");
+		highlightS = minOf(4,maxOf(1,(imageW+imageH)/400));
+		run("Enlarge...", "enlarge=&highlightS pixel");
+		Overlay.addSelection("#099FFF", highlightS);
+		nTitle += "+unsequenced_pxls";
+		rename(nTitle);
+		run("Select None");
+		keepPixelSequence = true;
+	}
+	else if(!diagnostics) close(tempID);
+	if (!diagnostics){
+		closeImageByTitle(refLTitle);
+		if(!keepPixelSequence) closeImageByTitle(nTtitle);
+	}
 	// else selectWindow(oTitle);
 	setBatchMode("exit and display");
 	exit();
-	/* End of unraveling macro */		
+	/* End of unraveling macro */
 /*
 	( 8(|))  ( 8(|))  ( 8(|))  ASC Functions  @@@@@:-)  @@@@@:-)  @@@@@:-)
-*/	
+*/
 	function closeImageByTitle(windowTitle) {  /* Cannot be used with tables */
 		/* v181002 reselects original image at end if open
 		   v200925 uses "while" instead of "if" so that it can also remove duplicates
@@ -407,8 +576,8 @@
 						ichanLabels = lastIndexOf(string, chanLabels[j]);
 						for (k=0; k<uSL; k++){
 							index = lastIndexOf(string, unwantedSuffixes[k]);  /* common ASC suffix */
-							if (ichanLabels>index && index>0) string = "" + substring(string, 0, index) + "_" + chanLabels[j];	
-						}				
+							if (ichanLabels>index && index>0) string = "" + substring(string, 0, index) + "_" + chanLabels[j];
+						}
 					}
 				}
 				index = lastIndexOf(string, "." + knownExt[i]);
