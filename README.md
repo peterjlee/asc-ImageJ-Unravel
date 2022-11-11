@@ -15,7 +15,7 @@ The "Unravel" macro can obtain a sequence of perimeter points that can be used a
   <p>Sampling length is important for extracting roughness values and sample length can be derived from the overall shape or the cumulative pixel=pixel distance:</p>
 <p><img src="/images/Unravel_Menu1_480w.png" alt="Unravel menu 1" width="480" /> </p>
 
-<p>'Height' can be generated from a variety of different reference points:</p>
+<p>Evaluation lengths can be estimated for a variety of topologies:</p>
 
 <p><img src="/images/Unravel_Menu2-CircOutline_510w.png" alt="Unravel menu 2" width="338" /> </p>
 
