@@ -13,15 +13,23 @@ The "Unravel" macro can obtain a sequence of perimeter points that can be used a
 
 <br />
   <p>Sampling length is important for extracting roughness values and sample length can be derived from the overall shape or the cumulative pixel=pixel distance:</p>
-<p><img src="/images/Unravel_Menu1_493w.png" alt="Unravel menu 1" width="493" /> </p>
+<p><img src="/images/Unravel_Menu1_480w.png" alt="Unravel menu 1" width="480" /> </p>
 
 <p>'Height' can be generated from a variety of different reference points:</p>
 
-<p><img src="/images/Unravel_Menu2_338w.png" alt="Unravel menu 2" width="338" /> </p>
+<p><img src="/images/Unravel_Menu2-CircOutline_510w.png" alt="Unravel menu 2" width="338" /> </p>
 
 <p>The start points can be chosen automatically or manually and also the direction of the sequence:</p>
 
-<p><img src="/images/Unravel_Menu3_355w.png" alt="Unravel menu 2" width="355" /> </p>
+<p><img src="/images/Unravel_Menu3-CircOutline_681w.png" alt="Unravel menu 3" width="355" /> </p>
+
+<p>The reference location(s) for the 'height' measurements can be selected:</p>
+
+<p><img src="/images/Unravel_HeightRefMenu-CircOutline_500w.png" alt="Height referencing" width="500" /> </p>
+
+<p>A pseudo-height map can be generated for import into dedicatedsurface analysis software:</p>
+
+<p><img src="/images/Gwyddion_import_example_417w.png" alt="Height referencing" width="417" /> </p>
 
 <p>The generated 32-bit height maps can be imported into Gwyddion for analysis:</p>
 <p><img src="/images/Gwyddion_import_example_417w.png" alt="Gwyddion analysis of pseudo-height-map." width="417" /> </p>
