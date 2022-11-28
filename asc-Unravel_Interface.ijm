@@ -10,8 +10,9 @@
 	v221108 Added initial menu to simplify instructions. Replaced sample length terminology with evaluation length to avoid confusion with sampling length. Added additional output columns.
 	v221110 Outputs information about non-sequenced pixels (those that were missed from the continuous line because they were not the closest adjacent pixel in the search order.
 	v221111 Evaluation lengths and highlighting of non-sequenced pixels are now shown as overlays on the pixel-sequence map if there are any non-sequenced pixels (even if the map was not requested).
+	v221128 Incorrect start pixel fiexed. Can now set intensity range for cut off and output;
 */
-	macroL = "Unravel_interface_v221111.ijm";
+	macroL = "Unravel_interface_v221128.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -142,15 +143,21 @@
 	for(topY=minBY,done=false;topY<maxBY+1 && !done; topY++){
 		for(topX=minBX;topX<maxBX+1 && !done; topX++) if (getPixel(topX,topY)!=255)	done = true;
 	}
+	topX -= 1; /* topX++ correct etc. */
+	topY -= 1;
 	for(leftX=minBX,done=false;leftX<maxBX+1 && !done; leftX++){
 		for(leftY=minBY;leftY<maxBY+1 && !done; leftY++) if (getPixel(leftX,leftY)!=255)	done = true;
 	}
+	leftX -= 1; /* leftX++ correct etc. */
+	leftY -= 1;
 	startCoordOptions = newArray("Manual entry");
 	if (objectType=="Horizontal_line") startCoordOptions = Array.concat("Left  pixel \("+leftX+","+leftY+"\)",startCoordOptions);
 	else if (objectType=="Vertical_line") startCoordOptions = Array.concat("Top pixel \("+topX+","+topY+"\)",startCoordOptions);
 	else startCoordOptions = Array.concat("Left  pixel \("+leftX+","+leftY+"\)","Top pixel \("+topX+","+topY+"\)",startCoordOptions);
 	Dialog.create("Unraveling options 3: \(" + macroL + "\)");
 		Dialog.addRadioButtonGroup("Starting point:",startCoordOptions,startCoordOptions.length,1,startCoordOptions[0]);
+		Dialog.addNumber("Intensity cut off and output intensity minimum",20,0,4,"");
+		Dialog.addNumber("Output intensity maximum",180,0,4,"");
 		Dialog.addNumber("Manual start x",0,0,3,"pixels");
 		Dialog.addNumber("Manual start y",0,0,3,"pixels");
 		Dialog.addNumber("Pixel search range in plus and minus pixels",6,0,3,"pixels");
@@ -161,6 +168,8 @@
 		Dialog.addCheckbox("Keep image showing pixel sequence and spline fit",true);
 	Dialog.show;
 		startCoordOption = Dialog.getRadioButton();
+		minInt = Dialog.getNumber();
+		maxInt = Dialog.getNumber();
 		x = Dialog.getNumber();
 		y = Dialog.getNumber();
 		kernelR = Dialog.getNumber();
@@ -183,6 +192,8 @@
 		x = leftX;
 		y = leftY;
 	}
+	startPixelInt = getPixel(x,y);
+	if (startPixelInt>maxInt) exit ("Start pixel \(" + x + ", " + y + "\) intensity = " + startPixelInt);
 	xSearchPxlsA = newArray();
 	ySearchPxlsA = newArray();
 	dSearchPxls  =newArray();
@@ -212,20 +223,20 @@
 	xSeqCoords[0] = x;
 	ySeqCoords[0] = y;
 	selectWindow(nTitle);
-	setPixel(x,y,255); /* Removes start pixel from search */
+	setPixel(x,y,minInt); /* Removes start pixel from search */
 	nSearchPxls = xSearchPxls.length;
-	for(i=1,k=0; i<pArea -1 && !done; i++){
+	for(i=1,k=0; i<pArea && !done; i++){
 		for(j=0,gotPix=false; j<nSearchPxls+1 && !gotPix; j++){
 			if(j==nSearchPxls) done = true;
 			else{
 				testX = xSeqCoords[k] + xSearchPxls[j];
 				testY = ySeqCoords[k] + ySearchPxls[j];
 				testI = getPixel(testX,testY);
-				if (testI<1){
+				if (testI<minInt){
 					k++;
 					xSeqCoords[k] = testX;
 					ySeqCoords[k] = testY;
-					newI = 20 + k*180/pArea;
+					newI = minInt + k*maxInt/pArea;
 					setPixel(xSeqCoords[k],ySeqCoords[k],newI); /* removes found contiguous pixel from search */
 					if (diagnostics) print(k,newI,xSeqCoords[k],ySeqCoords[k]);
 					gotPix = true;
@@ -451,6 +462,7 @@
 	}
 	if (hMap){
 		Dialog.create("Height map options: " + macroL);
+			Dialog.addMessage(seqPixN + " interface pixels found");
 			Dialog.addNumber("Evaluation length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
 			Dialog.addNumber("Sub-sample measurements \(1 = none\):",maxOf(1,round(seqPixN/4000)),0,10,"");
