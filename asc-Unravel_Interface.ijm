@@ -11,8 +11,9 @@
 	v221110 Outputs information about non-sequenced pixels (those that were missed from the continuous line because they were not the closest adjacent pixel in the search order.
 	v221111 Evaluation lengths and highlighting of non-sequenced pixels are now shown as overlays on the pixel-sequence map if there are any non-sequenced pixels (even if the map was not requested).
 	v221128 Incorrect start pixel fiexed. Can now set intensity range for cut off and output;
+	v221202 Replaced binary median with binary mean+threshold to speed up operation as suggested by post to ImageJ mailing list: http://imagej.nih.gov/ij/list.html by Herbie Gluender, 29. Nov 2022
 */
-	macroL = "Unravel_interface_v221128.ijm";
+	macroL = "Unravel_interface_v221202.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -97,19 +98,19 @@
 	smoothN = 0;
 		Dialog.create("Unraveling options 2 \(" + macroL + "\)");
 		Dialog.addRadioButtonGroup("Output evaluation length \(used for map scale\):",refLengths,refLengths.length,1,refLengths[defRef]);
-		if (startsWith(objectType, "Solid")) defSmoothN = minOf(100,round(pPerimeter/20)); /* median smoothing limited to max of 100 */
-		else defSmoothN = minOf(100,round(pArea/20)); /* median smoothing limited to max of 100 */
+		if (startsWith(objectType, "Solid")) defSmoothN = minOf(1000,round(pPerimeter/50)); /* median smoothing limited to max of 1000 */
+		else defSmoothN = minOf(1000,round(pArea/50)); /* median smoothing limited to max of 1000 */
 		if (!endsWith(objectType,"_line")){
 			Dialog.addCheckbox("Create median smoothed object \(i.e. physical waviness\)",false);
-			Dialog.addNumber("Radius for median smoothing",defSmoothN,0,4,"pixels \(max 100\)");
-			if (startsWith(objectType, "Solid")) mText = "Default median radius of " + defSmoothN + " pixels based on 10% of original perimeter \(" + pPerimeter + " pixels\)";
-			else mText = "Default median radius of " + defSmoothN + " pixels based on 5% of original perimeter \(" + pArea + " pixels\)";
-			if (defSmoothN==100) mText += ", limited to a maximum of 100";
+			Dialog.addNumber("Radius for median smoothing \(mean filter method\)",defSmoothN,0,4,"pixels \(max 1000\)");
+			if (startsWith(objectType, "Solid")) mText = "Default median radius of " + defSmoothN + " pixels based on 2% of original perimeter \(" + pPerimeter + " pixels\)";
+			else mText = "Default median radius of " + defSmoothN + " pixels based on 2% of original perimeter \(" + pArea + " pixels\)";
+			if (defSmoothN==100) mText += ", limited to a maximum of 1000";
 			Dialog.addMessage(mText);
 		}
 		else {
 			Dialog.addNumber("Sub-sample interval for spline",defSmoothN,0,4,"pixels");
-			Dialog.addMessage("Default interval of " + defSmoothN + " pixels based on 10% of original pixels in line\n");
+			Dialog.addMessage("Default interval of " + defSmoothN + " pixels based on 2% of original pixels in line\n");
 		}
 		/* Fewer outline-skeletonized pixels will be missed from the unravel sequence, so skeletonizing the line/outline is the default setting: */
 		Dialog.addCheckbox("Skeletonize outline/interface line \(could remove significant pixels\)",true); /* removes redundant pixels . . . but are they? */
@@ -118,7 +119,7 @@
 	Dialog.show;
 		refLength = Dialog.getRadioButton();
 		if (!endsWith(objectType,"_line")) smoothKeep = Dialog.getCheckbox();
-		smoothN = minOf(100,Dialog.getNumber());
+		smoothN = minOf(1000,Dialog.getNumber());
 		skelGo = Dialog.getCheckbox();
 		hMap = Dialog.getCheckbox();
 		diagnostics = Dialog.getCheckbox();
@@ -310,7 +311,7 @@
 		selectWindow(nTitle);
 		run("Restore Selection");
 		Overlay.addSelection("#66FF66", minOf(1,maxOf(2,(imageW+imageH)/400)));
-		nTitle += "+RefLength";
+		nTitle += "+" + refLength;
 		rename(nTitle);
 		run("Select None");
 	}
@@ -325,7 +326,10 @@
 			run("Select None");
 		}
 		else if(startsWith(refLength,"Median") || smoothKeep){
-			run("Median...", "radius=&smoothN");
+			/* Replaced binary median with binary mean+threshold to speed up operation as suggested by post to ImageJ mailing list: http://imagej.nih.gov/ij/list.html by Herbie Gluender, 29. Nov 2022 */
+			run("Mean...", "radius=&smoothN"); /* mean filter much faster than binary median in ImageJ */
+			setThreshold(0, 127, "raw"); /* binary median (majority filter) */
+			run("Convert to Mask");
 			medianT = nTitle + "_median" + smoothN;
 			if(smoothKeep) run("Duplicate...", "title=&medianT ignore");
 			run("Create Selection");
@@ -350,11 +354,12 @@
 		selectWindow(nTitle);
 		run("Restore Selection");
 		Overlay.addSelection("#66FF66", minOf(1,maxOf(2,(imageW+imageH)/400)));
-		nTitle += "+RefLength";
+		nTitle += "+" + refLength;
 		rename(nTitle);
 		run("Select None");
 	}
 	lName = replace(refLength,"_"," ");
+	lName = replace(lName,"Median-smooth","Median \(" + smoothN + " pxl\) smoothed")	;
 	IJ.log("For " + oTitle + ":\n" + lName + " = " + lRef + " " + unit);
 	if(continuous){
 		refLocs = newArray("Sequential_pixel_centroid","Object_center","Image_center");
