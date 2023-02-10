@@ -10,13 +10,16 @@
 	v221108 Added initial menu to simplify instructions. Replaced sample length terminology with evaluation length to avoid confusion with sampling length. Added additional output columns.
 	v221110 Outputs information about non-sequenced pixels (those that were missed from the continuous line because they were not the closest adjacent pixel in the search order.
 	v221111 Evaluation lengths and highlighting of non-sequenced pixels are now shown as overlays on the pixel-sequence map if there are any non-sequenced pixels (even if the map was not requested).
-	v221128 Incorrect start pixel fiexed. Can now set intensity range for cut off and output;
+	v221128 Incorrect start pixel fixed. Can now set intensity range for cut off and output;
 	v221202 Replaced binary median with binary mean+threshold to speed up operation as suggested by post to ImageJ mailing list: http://imagej.nih.gov/ij/list.html by Herbie Gluender, 29. Nov 2022
+	v230210 Fixed excessive space buffer creation and angle offset now relative to coordinate chosen in "Reference coordinate" dialog. Map can now be output using rotational sequence.
 */
-	macroL = "Unravel_interface_v221202.ijm";
+	macroL = "Unravel_interface_v230210.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
+	getPixelSize(unit, pixelWidth, pixelHeight);
+	lcf=(pixelWidth+pixelHeight)/2; /* ---> add here the side size of 1 pixel in the new calibrated units (e.g. lcf=5, if 1 pixels is 5mm) <--- */
 	nTitle = stripKnownExtensionFromString(oTitle);
 	nTitle += "_unrav";
 	run("Duplicate...", "title=&nTitle ignore");
@@ -30,21 +33,26 @@
 	run("Create Selection");
 	getSelectionBounds(minX, minY, widthS, heightS);
 	/* The following section helps classify the object */
+	borders = newArray(minX, minY, oImageH-heightS-minY,oImageW-widthS-minX);
+	Array.getStatistics(borders,minBorder,maxBorder,null);
 	pArea = getValue("Area raw");
 	oSolidity = getValue("Solidity");
 	oAR = getValue("AR");
 	oAngle = getValue("Angle");
 	pPerimeter = getValue("Perim. raw");
+	linity = pPerimeter/pArea;
 	run("Select None");
 	run("Fill Holes");
 	getRawStatistics(nPixels, meanPx, minPx, maxPx);
 	pFArea = (maxPx/meanPx-1)*nPixels;
 	run("Undo");
-	if (pFArea/pArea>2) objectType = "Continuous_outline";
-	else if (oSolidity<0.125){
-		if (widthS>heightS) objectType = "Horizontal_line";
-		else objectType = "Vertical_line";
-	}
+	if (linity>0.95){
+		if (pFArea/pArea>=1.1) objectType = "Continuous_outline";
+		else if (oSolidity==1){
+			if (oAngle<45) objectType = "Horizontal_line";
+			else objectType = "Vertical_line";
+		}
+	} 
 	else if (pFArea/pArea<1.1 || oSolidity>0.5)	objectType = "Solid_object";
 	else objectType = "Something_else";
 	if (objectType=="Solid_object") safeBuffer = round(pPerimeter/20);
@@ -58,7 +66,7 @@
 		safeBuffer = round(pArea/20);
 		run("Select None");
 	}
-	if (safeBuffer>oImageW && safeBuffer>oImageH) exit("Problem with safeBuffer size \(" + safeBuffer + "\)");
+	if (safeBuffer>oImageW && safeBuffer>oImageH) showMessage("Problem with safeBuffer size \(" + safeBuffer + "\), minimum border space = " + minBorder);
 	/* Make sure canvas is large enough to accommodate any smoothing or fits */
 	if (minX<safeBuffer/2 || (oImageW-(minX+widthS))<safeBuffer/2) newWidth = safeBuffer+oImageW;
 	else newWidth = oImageW;
@@ -72,8 +80,6 @@
 	pY = getValue("Y raw");
 	run("Select None");
 	getDimensions(imageW, imageH, oChannels, oSlices, oFrames);
-	getPixelSize(unit, pixelWidth, pixelHeight);
-	lcf=(pixelWidth+pixelHeight)/2; /* ---> add here the side size of 1 pixel in the new calibrated units (e.g. lcf=5, if 1 pixels is 5mm) <--- */
 	objectTypes = newArray("Continuous_outline","Solid_object","Horizontal_line","Vertical_line","Something_else");
 	setBatchMode("exit and display");
 	Dialog.create("Unraveling options 1: \(" + macroL + "\)");
@@ -261,14 +267,6 @@
 		else iD = i-1;
 		xDistances[i] = pow((pow(xSeqCoords[i]-xSeqCoords[iD],2) + pow(ySeqCoords[i]-ySeqCoords[iD],2)),0.5);
 	}
-	if(continuous && angleOut){
-		radianAngles = newArray();
-		radianOffsets = newArray();
-		degreeOffsets = newArray();
-		for (i=0;i<seqPixN;i++) radianAngles[i] = atan2(xSeqCoords[i],ySeqCoords[i]);
-		for (i=0;i<seqPixN;i++) radianOffsets[i] = radianAngles[i] - radianAngles[0];
-		for (i=0;i<seqPixN;i++) degreeOffsets[i] = radianOffsets[i] * 180/PI;
-	}
 	xDistancesTotal = newArray();
 	xDistancesTotal[0] = 0;
 	if(lcf!=1){
@@ -364,7 +362,7 @@
 	if(continuous){
 		refLocs = newArray("Sequential_pixel_centroid","Object_center","Image_center");
 		dimensionsText = "Sequential pixel centroid: x = " + xSeqCoords_mean + ", y = " + ySeqCoords_mean + "\nObject center: x = " + pX + ", y = " + pY+ "\nImage center: x = " + imageW/2 + ", y = " + imageH/2;
-		Dialog.create("Height reference coordinate \(" + macroL + "\)");
+		Dialog.create("Reference coordinate \(" + macroL + "\)");
 			if(refLength!="Total_pixel-pixel_length"){
 				refLocs = Array.concat(refLocs,"Reference_shape_center");
 				refShapeName = replace(lName,"perimeter","");
@@ -372,7 +370,7 @@
 			}
 			refLocs = Array.concat(refLocs,"Arbitrary_coordinates");
 			Dialog.addMessage(dimensionsText);
-			Dialog.addRadioButtonGroup("Reference location for height:",refLocs,refLocs.length,1,refLocs[1]);
+			Dialog.addRadioButtonGroup("Reference location for height and angles:",refLocs,refLocs.length,1,refLocs[1]);
 			Dialog.addNumber("Arbitrary x", 0,0,10,"pixels");
 			Dialog.addNumber("Arbitrary y", 0,0,10,"pixels");
 			Dialog.addString("Table compatible name for distance to reference \(i.e. 'Height'\)","Height",10);
@@ -412,6 +410,18 @@
 	}
 	else exit("Unidentified reference location");
 	IJ.log("Reference locations: x = " + xRef + ", y = " + yRef);
+	if(angleOut){
+		radianAngles = newArray();
+		radianOffsets = newArray();
+		degreeOffsets = newArray();
+		for (i=0;i<seqPixN;i++) radianAngles[i] = atan2(xRef-xSeqCoords[i],yRef-ySeqCoords[i]);
+		for (i=0;i<seqPixN;i++){
+			radOff = radianAngles[i] - radianAngles[0];
+			if (radOff<0) radianOffsets[i] = 2*PI + radOff;
+			else radianOffsets[i] = radOff;
+		}
+		for (i=0;i<seqPixN;i++) degreeOffsets[i] = radianOffsets[i] * 180/PI;
+	}
 	relDistances = newArray();
 	if (startsWith(objectType,"Vert")) for (i=0;i<seqPixN;i++) relDistances[i] = xSeqCoords[i];
 	else if (startsWith(objectType,"Horiz")) for (i=0;i<seqPixN;i++) relDistances[i] = imageH - ySeqCoords[i]; /* correct to make increasing height upwards */
@@ -472,13 +482,20 @@
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
 			Dialog.addNumber("Sub-sample measurements \(1 = none\):",maxOf(1,round(seqPixN/4000)),0,10,"");
 			Dialog.addCheckbox("Map should be saved as uncompressed TIFF; go ahead?",true);
+			if (angleOut) Dialog.addCheckbox("Sort data by offset angle?",true);
 		Dialog.show();
 			lRef = Dialog.getNumber();
 			hMapN = Dialog.getNumber();
 			subSamN = maxOf(1,round(Dialog.getNumber()));
 			saveTIFF = Dialog.getCheckbox();
+			if (angleOut) sortByAngle = Dialog.getCheckbox();
 		subSeqPixN = round(seqPixN/subSamN);
 		newImage("tempHMap", "32-bit black", subSeqPixN, 1, 1);
+		if (sortByAngle){
+			if (clockwise) Array.reverse(radianOffsets);
+			if(lcf!=1) Array.sort(radianOffsets,sNormRelDistances);
+			else Array.sort(radianOffsets,normRelDistances);		
+		}
 		for(i=0,j=0,k=0; i<seqPixN; i++){
 			if (j==subSamN){
 				if(lcf!=1) setPixel(k,0,sNormRelDistances[i]);
@@ -491,7 +508,8 @@
 		run("Size...", "width=" + subSeqPixN + " height=" + hMapN + " depth=1 interpolation=None");
 		run("Set Scale...", "distance=" + subSeqPixN + " known=" + lRef + " pixel=1 unit=" + unit);
 		run("Enhance Contrast...", "saturated=0"); /* required for viewable 32-bit Fiji image */
-		rename(nTitle + "_hMap");
+		if(sortByAngle) rename(nTitle + "_angle-sorted-hMap");
+		else rename(nTitle + "_hMap");
 		closeImageByTitle("tempHMap");
 		if(saveTIFF) saveAs("Tiff");
 	}
