@@ -13,8 +13,9 @@
 	v221128 Incorrect start pixel fixed. Can now set intensity range for cut off and output;
 	v221202 Replaced binary median with binary mean+threshold to speed up operation as suggested by post to ImageJ mailing list: http://imagej.nih.gov/ij/list.html by Herbie Gluender, 29. Nov 2022
 	v230210 Fixed excessive space buffer creation and angle offset now relative to coordinate chosen in "Reference coordinate" dialog. Map can now be output using rotational sequence.
+	v230211 Adds angle increment columns and directional filtering (useful if you have re-entrant angles).
 */
-	macroL = "Unravel_interface_v230210.ijm";
+	macroL = "Unravel_interface_v230211b.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -410,17 +411,33 @@
 	}
 	else exit("Unidentified reference location");
 	IJ.log("Reference locations: x = " + xRef + ", y = " + yRef);
-	if(angleOut){
-		radianAngles = newArray();
-		radianOffsets = newArray();
-		degreeOffsets = newArray();
-		for (i=0;i<seqPixN;i++) radianAngles[i] = atan2(xRef-xSeqCoords[i],yRef-ySeqCoords[i]);
-		for (i=0;i<seqPixN;i++){
-			radOff = radianAngles[i] - radianAngles[0];
-			if (radOff<0) radianOffsets[i] = 2*PI + radOff;
-			else radianOffsets[i] = radOff;
+	radianAngles = newArray();
+	radianOffsets = newArray();
+	radianIncrements = newArray(0,0);
+	degreeOffsets = newArray();
+	degreeIncrements = newArray(0,0);
+	for (i=0;i<seqPixN;i++){
+		radianAngles[i] = atan2(xRef-xSeqCoords[i],yRef-ySeqCoords[i]);
+		radOff = radianAngles[i] - radianAngles[0];
+		if (radOff<0) radianOffsets[i] = 2*PI + radOff;
+		else radianOffsets[i] = radOff;
+		degreeOffsets[i] = radianOffsets[i] * 180/PI;
+		if (i>0){
+			radInc = radianAngles[i] - radianAngles[i-1];
+			if(radInc>PI) radInc -= 2*PI;
+			else if (radInc<-PI) radInc += 2*PI;
+			radianIncrements[i] = radInc;
+			degreeIncrements[i] = radInc * 180/PI;
 		}
-		for (i=0;i<seqPixN;i++) degreeOffsets[i] = radianOffsets[i] * 180/PI;
+	}
+	Array.getStatistics(degreeIncrements, degreeIncrements_min, degreeIncrements_max, degreeIncrements_mean, degreeIncrements_stdDev);
+	if(degreeIncrements_mean<0){
+		clockwiseIncr = true;
+		IJ.log("Apparent direction clockwise; mean advance " + degreeIncrements_mean + " degrees");
+	}
+	else {
+		clockwiseIncr = false;
+		IJ.log("Apparent direction anticlockwise; mean advance " + degreeIncrements_mean + " degrees");
 	}
 	relDistances = newArray();
 	if (startsWith(objectType,"Vert")) for (i=0;i<seqPixN;i++) relDistances[i] = xSeqCoords[i];
@@ -440,7 +457,6 @@
 			sNormRelDistances[i] = lcf * normRelDistances[i];
 			sNormRelDistSqs[i] = pow(sNormRelDistances[i],2);
 		}
-		fAmps = Array.fourier(sNormRelDistances);
 	}
 	Table.setColumn("Seq_coord_x", xSeqCoords);
 	Table.setColumn("Seq_coord_y", ySeqCoords);
@@ -458,6 +474,8 @@
 			Table.setColumn("Angle \(radians\)",radianAngles);
 			Table.setColumn("Angle Offset \(radians\)",radianOffsets);
 			Table.setColumn("Angle Offset \(degrees\)",degreeOffsets);
+			Table.setColumn("Angle Incr. \(radians\)",radianIncrements);
+			Table.setColumn("Angle Incr. \(degrees\)",degreeIncrements);
 		}
 	}
 	else {
@@ -469,37 +487,83 @@
 		}
 		else Table.setColumn(distName + "_norm^2",normRelDistSqs);
 	}
-	if(lcf!=1) Table.setColumn("Fourier_amps", fAmps);
-	if(lcf!=1){
-		Array.getStatistics(sNormRelDistances, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
-		Array.getStatistics(sNormRelDistSqs, null, null, hSq_mean, null);
-		IJ.log("_________\n" + nTitle + " height statistics:\nmin = " + hStat_min + " " + unit + "\nmax = " + hStat_max + " " + unit + "\nrange = " + hStat_max-hStat_min + " " + unit +"\nmean = " + hStat_mean + " " + unit + "\nstd Dev = " + hStat_stdDev + " " + unit + "\nRa\(full length) = " + hStat_mean  + " " + unit + "\nRq\(full length\) = " + sqrt(hSq_mean)  + " " + unit +  "\n_________");
-	}
-	if (hMap){
-		Dialog.create("Height map options: " + macroL);
-			Dialog.addMessage(seqPixN + " interface pixels found");
+	clockwise = clockwiseIncr;
+	Dialog.create("Output and Height map options: " + macroL);
+		Dialog.addMessage(seqPixN + " interface pixels found");
+		Dialog.addCheckbox("Filter out reverse direction(no re-entrant angles)?",true);
+		if (hMap){
 			Dialog.addNumber("Evaluation length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
 			Dialog.addNumber("Sub-sample measurements \(1 = none\):",maxOf(1,round(seqPixN/4000)),0,10,"");
 			Dialog.addCheckbox("Map should be saved as uncompressed TIFF; go ahead?",true);
-			if (angleOut) Dialog.addCheckbox("Sort data by offset angle?",true);
-		Dialog.show();
+		}
+		if (angleOut){
+			Dialog.addCheckbox("Sort data by offset angle (not useful if direction filtered)?",false);
+			if(clockwiseIncr) Dialog.addCheckbox("Leave as clockwise direction \(clockwise from analysis\)?",clockwiseIncr);
+			else Dialog.addCheckbox("Reverse to clockwise \(anti-clockwise from analysis\)?",clockwiseIncr);
+		}
+	Dialog.show();
+		oneDirection = Dialog.getCheckbox();
+		if (hMap){
 			lRef = Dialog.getNumber();
 			hMapN = Dialog.getNumber();
 			subSamN = maxOf(1,round(Dialog.getNumber()));
 			saveTIFF = Dialog.getCheckbox();
-			if (angleOut) sortByAngle = Dialog.getCheckbox();
+		}
+		if (angleOut){
+			sortByAngle = Dialog.getCheckbox();
+			clockwise = Dialog.getCheckbox();
+		}
+	if(lcf!=1) outRelDists = sNormRelDistances;
+	else outRelDists = normRelDistances;
+	if (oneDirection) {
+		oneDirOutRelDists = newArray(outRelDists[0],0);
+		if(lcf!=1) oneDirOutRelDistsSq = newArray();
+		if(clockwise){
+			for(i=0,angle=360,k=0; i<seqPixN; i++){
+				if(degreeOffsets[i]<angle){
+					if(i>0) angle = degreeOffsets[i];
+					oneDirOutRelDists[k] = outRelDists[i];
+					if(lcf!=1) oneDirOutRelDistsSq[k] = sNormRelDistSqs[i];
+					k++;
+				}
+			}
+		}
+		else {
+			for(i=0,angle=-1,k=0; i<seqPixN; i++){
+				if(degreeOffsets[i]>angle){
+					if(i>0) angle = degreeOffsets[i];
+					oneDirOutRelDists[k] = outRelDists[i];
+					if(lcf!=1) oneDirOutRelDistsSq[k] = sNormRelDistSqs[i];
+					k++;
+				}
+			}
+		}
+		fPixN = oneDirOutRelDists.length;
+		IJ.log (fPixN + " direction-filtered pixels out of original " + seqPixN);
+		outRelDists = oneDirOutRelDists;
+		if(lcf!=1) sNormRelDistSqs = oneDirOutRelDistsSq;
+		seqPixN = fPixN;
+	}
+	else if (sortByAngle){
+		if (clockwise) Array.reverse(radianOffsets);
+		Array.sort(radianOffsets,outRelDists,sNormRelDistSqs);
+	}
+	if(lcf!=1){
+		Array.getStatistics(outRelDists, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
+		Array.getStatistics(sNormRelDistSqs, null, null, hSq_mean, null);
+		IJ.log("_________\n" + nTitle + " height statistics:\nmin = " + hStat_min + " " + unit + "\nmax = " + hStat_max + " " + unit + "\nrange = " + hStat_max-hStat_min + " " + unit +"\nmean = " + hStat_mean + " " + unit + "\nstd Dev = " + hStat_stdDev + " " + unit + "\nRa\(full length) = " + hStat_mean  + " " + unit + "\nRq\(full length\) = " + sqrt(hSq_mean)  + " " + unit +  "\n_________");
+		fAmps = Array.fourier(sNormRelDistances);
+		fAmpsCol = "Fourier_amps";
+		if(oneDirection) fAmpsCol += "_uni-dir.";
+		if(lcf!=1) Table.setColumn(fAmpsCol, fAmps);
+	}
+	if (hMap){
 		subSeqPixN = round(seqPixN/subSamN);
 		newImage("tempHMap", "32-bit black", subSeqPixN, 1, 1);
-		if (sortByAngle){
-			if (clockwise) Array.reverse(radianOffsets);
-			if(lcf!=1) Array.sort(radianOffsets,sNormRelDistances);
-			else Array.sort(radianOffsets,normRelDistances);		
-		}
 		for(i=0,j=0,k=0; i<seqPixN; i++){
 			if (j==subSamN){
-				if(lcf!=1) setPixel(k,0,sNormRelDistances[i]);
-				else setPixel(k,0,normRelDistances[i]);
+				setPixel(k,0,outRelDists[i]);
 				k++;
 				j=0;
 			}
@@ -508,8 +572,10 @@
 		run("Size...", "width=" + subSeqPixN + " height=" + hMapN + " depth=1 interpolation=None");
 		run("Set Scale...", "distance=" + subSeqPixN + " known=" + lRef + " pixel=1 unit=" + unit);
 		run("Enhance Contrast...", "saturated=0"); /* required for viewable 32-bit Fiji image */
-		if(sortByAngle) rename(nTitle + "_angle-sorted-hMap");
-		else rename(nTitle + "_hMap");
+		mapT = nTitle + "_hMap";
+		if(oneDirection) mapT += "_uni-dir.";
+		if(sortByAngle) mapT += "_angle-sorted";
+		rename(mapT);
 		closeImageByTitle("tempHMap");
 		if(saveTIFF) saveAs("Tiff");
 	}
