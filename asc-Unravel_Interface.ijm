@@ -14,15 +14,19 @@
 	v221202 Replaced binary median with binary mean+threshold to speed up operation as suggested by post to ImageJ mailing list: http://imagej.nih.gov/ij/list.html by Herbie Gluender, 29. Nov 2022
 	v230210 Fixed excessive space buffer creation and angle offset now relative to coordinate chosen in "Reference coordinate" dialog. Map can now be output using rotational sequence.
 	v230211 Adds angle increment columns and directional filtering (useful if you have re-entrant angles).
+	v230213 Adds column of sequential distance normalized to the evaluation length and adds option to output direction filtered results to csv file.
 */
-	macroL = "Unravel_interface_v230211b.ijm";
+	macroL = "Unravel_interface_v230213.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
 	getPixelSize(unit, pixelWidth, pixelHeight);
 	lcf=(pixelWidth+pixelHeight)/2; /* ---> add here the side size of 1 pixel in the new calibrated units (e.g. lcf=5, if 1 pixels is 5mm) <--- */
+	if(lcf!=1) gotScale = true;
+	else gotScale = false;
 	nTitle = stripKnownExtensionFromString(oTitle);
 	nTitle += "_unrav";
+	dir = getInfo("image.directory");
 	run("Duplicate...", "title=&nTitle ignore");
 	if (!is("binary") || is("Inverting LUT") || getPixel(0,0)==0){
 		if(getBoolean("This macro expects a binary image with white background, would you like to try a apply a quick fix?")) toWhiteBGBinary(nTitle);
@@ -257,8 +261,7 @@
 	Array.getStatistics(ySeqCoords, ySeqCoords_min, ySeqCoords_max, ySeqCoords_mean, ySeqCoords_stdDev);
 	seqPixN = xSeqCoords.length;
 	if (diagnostics) print(seqPixN + "coordinates in sequence");
-	xDistances = newArray();
-	xDistances[0] = 0;
+	ptpDistances = newArray(0,0);
 	for (i=1;i<seqPixN;i++){
 		relI = i-1;
 		if(relI<1){
@@ -266,20 +269,25 @@
 			else iD = 0;
 		}
 		else iD = i-1;
-		xDistances[i] = pow((pow(xSeqCoords[i]-xSeqCoords[iD],2) + pow(ySeqCoords[i]-ySeqCoords[iD],2)),0.5);
+		ptpDistances[i] = pow((pow(xSeqCoords[i]-xSeqCoords[iD],2) + pow(ySeqCoords[i]-ySeqCoords[iD],2)),0.5);
 	}
-	xDistancesTotal = newArray();
-	xDistancesTotal[0] = 0;
-	if(lcf!=1){
-		xSDistancesTotal = newArray();
-		xSDistancesTotal[0] = 0;
-	}
-	for (i=1;i<seqPixN;i++) xDistancesTotal[i] = xDistancesTotal[i-1] + xDistances[i];
-	if(lcf!=1) for (i=1;i<seqPixN;i++) xSDistancesTotal[i] = lcf * xDistancesTotal[i];
-	Array.getStatistics(xDistancesTotal, xDistancesTotal_min, xDistancesTotal_max, xDistancesTotal_mean, xDistancesTotal_stdDev);
+	ptpDistancesTotal = newArray(0,0);
+	if(gotScale){
+		ptpSDistances = newArray(0,0);
+		ptpSDistancesTotal = newArray(0,0);
+	} 
+	for (i=1;i<seqPixN;i++){
+		ptpDistancesTotal[i] = ptpDistancesTotal[i-1] + ptpDistances[i];
+		if(gotScale) {
+			ptpSDistances[i] = lcf * ptpDistances[i];
+			ptpSDistancesTotal[i] = lcf * ptpDistancesTotal[i];
+		}
+	} 
+	
+	Array.getStatistics(ptpDistancesTotal, ptpDistancesTotal_min, ptpDistancesTotal_max, ptpDistancesTotal_mean, ptpDistancesTotal_stdDev);
 	/* The following section provides an estimate of the total evaluation length */
 	selectWindow(refLTitle);
-	if(refLength=="Total_pixel-pixel_length") lRef = xDistancesTotal_max;
+	if(refLength=="Total_pixel-pixel_length") lRef = ptpDistancesTotal_max;
 	else if(startsWith(refLength,"First-to-last")) lRef = lcf * sqrt(pow(xSeqCoords[0]-xSeqCoords[seqPixN-1],2) + pow(ySeqCoords[0]-ySeqCoords[seqPixN-1],2));
 	else if(startsWith(refLength,"Sub-sample_spline-fit")){
 		seqSubN = round(seqPixN/smoothN);
@@ -304,7 +312,7 @@
 				x1 = x2;
 				y1 = y2;
 			}
-			if(lcf!=1) lRef*= lcf;
+			if(gotScale) lRef*= lcf;
 		}
 		run("Select None");
 		selectWindow(nTitle);
@@ -450,7 +458,7 @@
 		normRelDistances[i] = relDistances[i] - relDistances_min;
 		normRelDistSqs[i] = pow(normRelDistances[i],2);
 	}
-	if(lcf!=1){
+	if(gotScale){
 		sNormRelDistances = newArray();
 		sNormRelDistSqs = newArray();
 		for (i=0;i<seqPixN;i++){
@@ -460,12 +468,16 @@
 	}
 	Table.setColumn("Seq_coord_x", xSeqCoords);
 	Table.setColumn("Seq_coord_y", ySeqCoords);
-	Table.setColumn("Seq_dist\(px\)", xDistancesTotal);
-	if(lcf!=1) Table.setColumn("Seq_dist\("+unit+"\)", xSDistancesTotal);
+	Table.setColumn("Incr_dist\(px\)", ptpDistances);
+	Table.setColumn("Seq_dist\(px\)", ptpDistancesTotal);
+	if(gotScale){
+		Table.setColumn("Incr_dist\("+unit+"\)", ptpSDistances);
+		Table.setColumn("Seq_dist\("+unit+"\)", ptpSDistancesTotal);
+	} 
 	if(continuous){
 		Table.setColumn(distName + "\(px\)", relDistances);
 		Table.setColumn(distName + "_norm\(px\)", normRelDistances);
-		if(lcf!=1){
+		if(gotScale){
 			Table.setColumn(distName + "_norm\("+unit+"\)", sNormRelDistances);
 			Table.setColumn(distName + "_norm^2\("+unit+"^2\)",sNormRelDistSqs);
 		}
@@ -481,7 +493,7 @@
 	else {
 		Table.setColumn(distName + "\(px\)", relDistances);
 		Table.setColumn(distName + "_norm\(px\)", normRelDistances);
-		if(lcf!=1){
+		if(gotScale){
 			Table.setColumn(distName + "_norm\("+unit+"\)", sNormRelDistances);
 			Table.setColumn(distName + "_norm^2\("+unit+"^2\)", sNormRelDistSqs);
 		}
@@ -490,7 +502,8 @@
 	clockwise = clockwiseIncr;
 	Dialog.create("Output and Height map options: " + macroL);
 		Dialog.addMessage(seqPixN + " interface pixels found");
-		Dialog.addCheckbox("Filter out reverse direction(no re-entrant angles)?",true);
+		Dialog.addCheckbox("Filter out reverse direction(no re-entrant angles)?",continuous);
+		Dialog.addCheckbox("Save directional dataset as selected above",continuous);
 		if (hMap){
 			Dialog.addNumber("Evaluation length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
@@ -504,6 +517,7 @@
 		}
 	Dialog.show();
 		oneDirection = Dialog.getCheckbox();
+		filteredCSV =  Dialog.getCheckbox();
 		if (hMap){
 			lRef = Dialog.getNumber();
 			hMapN = Dialog.getNumber();
@@ -514,49 +528,79 @@
 			sortByAngle = Dialog.getCheckbox();
 			clockwise = Dialog.getCheckbox();
 		}
-	if(lcf!=1) outRelDists = sNormRelDistances;
-	else outRelDists = normRelDistances;
+	if(gotScale) {
+		outPTPDists = ptpSDistances;
+		outPTPDistTotals = ptpSDistancesTotal;
+		evalLF = ptpSDistancesTotal[seqPixN-1]/lRef;
+		outPTPDistTotalEvals = newArray(0,0);
+		for (i=0;i<seqPixN;i++) outPTPDistTotalEvals[i] = ptpSDistancesTotal[i]/evalLF;
+		Table.setColumn("Seq_dist_NormToEval\("+unit+"\)", outPTPDistTotalEvals);
+		outRelDists = sNormRelDistances;
+		outRelDistSqs = sNormRelDistSqs;
+	}
+	else{
+		outPTPDists = ptpDistances;
+		outPTPDistTotals = ptpDistancesTotal;
+		outRelDists = normRelDistances;
+		outRelDistSqs = normRelDistSq;
+	} 
 	if (oneDirection) {
+		oneDirOutPTPDists = newArray(0,0);
+		oneDirOutPTPDistTotals = newArray(0,0);
 		oneDirOutRelDists = newArray(outRelDists[0],0);
-		if(lcf!=1) oneDirOutRelDistsSq = newArray();
-		if(clockwise){
-			for(i=0,angle=360,k=0; i<seqPixN; i++){
-				if(degreeOffsets[i]<angle){
-					if(i>0) angle = degreeOffsets[i];
-					oneDirOutRelDists[k] = outRelDists[i];
-					if(lcf!=1) oneDirOutRelDistsSq[k] = sNormRelDistSqs[i];
-					k++;
+		oneDirOutRelDistSqs = newArray(outRelDistSqs[0],0);
+		oneDirOutPTPDistTotalEvals = newArray(0,0);
+		oneDirOutDegreeOffsets = newArray(0,0);
+		oneDirOutDegreeIncrements = newArray(0,0);
+		oneDirXSeqCoords = newArray(xSeqCoords[0],0);
+		oneDirYSeqCoords = newArray(xSeqCoords[0],0);
+		if(gotScale) oneDirOutRelDistsSq = newArray();
+		if(clockwise) angle = 360;
+		else angle = -1;
+		for(i=0,k=0; i<seqPixN; i++){
+			if((clockwise && degreeOffsets[i]<angle) || (!clockwise && degreeOffsets[i]>angle)){
+				if(i>0){
+					angle = degreeOffsets[i];
+					oneDirOutDegreeOffsets[k] = angle;
+					oneDirOutDegreeIncrements[k] = abs(oneDirOutDegreeOffsets[k]-oneDirOutDegreeOffsets[k-1]);
 				}
-			}
-		}
-		else {
-			for(i=0,angle=-1,k=0; i<seqPixN; i++){
-				if(degreeOffsets[i]>angle){
-					if(i>0) angle = degreeOffsets[i];
-					oneDirOutRelDists[k] = outRelDists[i];
-					if(lcf!=1) oneDirOutRelDistsSq[k] = sNormRelDistSqs[i];
-					k++;
-				}
+				oneDirOutPTPDists[k] = outPTPDists[i];
+				oneDirOutPTPDistTotals[k] = outPTPDistTotals[i];
+				oneDirOutRelDists[k] = outRelDists[i];
+				oneDirOutRelDistSqs[k] = outRelDistSqs[i];
+				oneDirOutPTPDistTotalEvals[k] = outPTPDistTotalEvals[i];
+				oneDirXSeqCoords[k] = xSeqCoords[i];
+				oneDirYSeqCoords[k] = ySeqCoords[i];
+				k++;
 			}
 		}
 		fPixN = oneDirOutRelDists.length;
 		IJ.log (fPixN + " direction-filtered pixels out of original " + seqPixN);
+		xSeqCoords = oneDirXSeqCoords;
+		ySeqCoords = oneDirYSeqCoords;
+		outPTPDists = oneDirOutPTPDists;
+		outPTPDistTotals = oneDirOutPTPDistTotals;
 		outRelDists = oneDirOutRelDists;
-		if(lcf!=1) sNormRelDistSqs = oneDirOutRelDistsSq;
+		outRelDistSqs = oneDirOutRelDistSqs;
+		outPTPDistTotalEvals = oneDirOutPTPDistTotalEvals;
+		if(angleOut){
+			degreeOffsets = oneDirOutDegreeOffsets;
+			degreeIncrements = oneDirOutDegreeIncrements;
+		}
 		seqPixN = fPixN;
 	}
 	else if (sortByAngle){
 		if (clockwise) Array.reverse(radianOffsets);
-		Array.sort(radianOffsets,outRelDists,sNormRelDistSqs);
+		Array.sort(radianOffsets,xSeqCoords,ySeqCoords,outPTPDists,outPTPDistTotals,outRelDists,outRelDistSqs);
 	}
-	if(lcf!=1){
+	if(gotScale){
 		Array.getStatistics(outRelDists, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
-		Array.getStatistics(sNormRelDistSqs, null, null, hSq_mean, null);
+		Array.getStatistics(outRelDistSqs, null, null, hSq_mean, null);
 		IJ.log("_________\n" + nTitle + " height statistics:\nmin = " + hStat_min + " " + unit + "\nmax = " + hStat_max + " " + unit + "\nrange = " + hStat_max-hStat_min + " " + unit +"\nmean = " + hStat_mean + " " + unit + "\nstd Dev = " + hStat_stdDev + " " + unit + "\nRa\(full length) = " + hStat_mean  + " " + unit + "\nRq\(full length\) = " + sqrt(hSq_mean)  + " " + unit +  "\n_________");
 		fAmps = Array.fourier(sNormRelDistances);
 		fAmpsCol = "Fourier_amps";
 		if(oneDirection) fAmpsCol += "_uni-dir.";
-		if(lcf!=1) Table.setColumn(fAmpsCol, fAmps);
+		if(gotScale) Table.setColumn(fAmpsCol, fAmps);
 	}
 	if (hMap){
 		subSeqPixN = round(seqPixN/subSamN);
@@ -579,6 +623,27 @@
 		closeImageByTitle("tempHMap");
 		if(saveTIFF) saveAs("Tiff");
 	}
+	if(filteredCSV){
+		if(!gotScale) unit = "pixels";
+		Table.create("Results");
+		Table.setColumn("Seq_coord_x",xSeqCoords);
+		Table.setColumn("Seq_coord_y",ySeqCoords);
+		Table.setColumn("Seq_incr\("+unit+"\)",outPTPDists);
+		Table.setColumn("Seq_dist\("+unit+"\)",outPTPDistTotals);
+		if(gotScale) Table.setColumn("Seq_dist\("+unit+"\)_NormToEval",outPTPDistTotalEvals); 
+		if(angleOut){
+			Table.setColumn("Angle Incr. \(degrees\)",degreeIncrements);
+			Table.setColumn("Angle Offset \(degrees\)",degreeOffsets);
+		} 
+		Table.setColumn(distName + "_norm\("+unit+"\)",outRelDists);
+		Table.setColumn(distName + "_norm^2\("+unit+"^2\)",outRelDistSqs);
+		tCSV1 = nTitle + "_directional_outputCSV";
+		outputCSVPath = dir + tCSV1 +".csv";
+		updateResults();
+		saveAs("Results", outputCSVPath);
+		run("Close");
+		restoreResultsFrom("hiddenResults");
+	}
 	selectImage(tempID);
 	getRawStatistics(nPixels, meanPx, minPx, maxPx);
 	if (minPx==0){
@@ -590,7 +655,7 @@
 		run("Enlarge...", "enlarge=&highlightS pixel");
 		Overlay.addSelection("#099FFF", highlightS);
 		nTitle += "+unsequenced_pxls";
-		rename(nTitle);
+				rename(nTitle);
 		run("Select None");
 		keepPixelSequence = true;
 	}
@@ -651,6 +716,23 @@
 			medianVals = newArray(ints[midV],ints[midV],ints[midV]);
 		}
 		return medianVals;
+	}
+	function hideResultsAs(deactivatedResults) {
+		if (isOpen("Results")) {  /* This swapping of tables does not increase run time significantly */
+			selectWindow("Results");
+			IJ.renameResults(deactivatedResults);
+		}
+	}
+	function restoreResultsFrom(deactivatedResults) {
+		/* v230213	extra close check */
+		if (isOpen(deactivatedResults)) {
+			selectWindow(deactivatedResults);
+			IJ.renameResults("Results");
+		}
+		if (isOpen(deactivatedResults)) {
+			selectWindow(deactivatedResults);
+			close();
+		}
 	}
 	function stripKnownExtensionFromString(string) {
 		/*	Note: Do not use on path as it may change the directory names
