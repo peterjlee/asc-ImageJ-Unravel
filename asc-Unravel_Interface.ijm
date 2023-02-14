@@ -15,8 +15,9 @@
 	v230210 Fixed excessive space buffer creation and angle offset now relative to coordinate chosen in "Reference coordinate" dialog. Map can now be output using rotational sequence.
 	v230211 Adds angle increment columns and directional filtering (useful if you have re-entrant angles).
 	v230213 Adds column of sequential distance normalized to the evaluation length and adds option to output direction filtered results to csv file.
+	v230214 Adds directional continuity flag to primary Results table, overlay display of filtered sequence, simple color options for overlays. Add zero degree start option and fixes disappearing Results window.
 */
-	macroL = "Unravel_interface_v230213.ijm";
+	macroL = "Unravel_interface_v230214.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -81,8 +82,8 @@
 	else expCanvas = false;
 	if (expCanvas) run("Canvas Size...", "width=&newWidth height=&newHeight position=Center");
 	run("Create Selection");
-	pX = getValue("X raw");
-	pY = getValue("Y raw");
+	pX = round(getValue("X raw"));
+	pY = round(getValue("Y raw"));
 	run("Select None");
 	getDimensions(imageW, imageH, oChannels, oSlices, oFrames);
 	objectTypes = newArray("Continuous_outline","Solid_object","Horizontal_line","Vertical_line","Something_else");
@@ -90,10 +91,15 @@
 	Dialog.create("Unraveling options 1: \(" + macroL + "\)");
 		Dialog.addMessage("This macro currently only works on individual objects of the types listed below:");
 		if(oChannels+oSlices+oFrames!=3) Dialog.addMessage("Warning: This macro has only been tested on single slice-frame-channel images",12,"red");
+		if (isOpen("Results")) Dialog.addCheckbox("Close open Results window?",true);
 		Dialog.addRadioButtonGroup("Object type:",objectTypes,objectTypes.length,1,objectType);
 		Dialog.addMessage("Identified object type: " + objectType+ "  from:\nTotal pixels: " + pArea + "\nBlack pixels after fill: " + pFArea + "\nAspect ratio: " + oAR + "\nPerimeter: " + pPerimeter + " pixels\nSolidity: " + oSolidity + "\nAngle: " + oAngle);
 	Dialog.show;
+		closeOpenResults = Dialog.getCheckbox();
 		objectType = Dialog.getRadioButton();
+	if (closeOpenResults){
+		while (isOpen("Results")) close("Results");
+	}
 	if (objectType=="Something_else") exit("Sorry, I am not ready for 'something else' yet");
 	if (startsWith(objectType,"Continuous") || startsWith(objectType,"Solid")) continuous = true;
 	else continuous = false;
@@ -149,6 +155,19 @@
 	pArea  = getValue("Area raw");
 	maxBX = minBX + widthB;
 	maxBY = minBY + heightB;
+	bgY = getPixel(0, pY);
+	for(i=1;i<imageW;i++){
+		if (getPixel(i,pY)!=bgY){
+			horizX = i;
+			i = imageW;
+		}
+	}
+	for(i=1;i<imageH;i++){
+		if (getPixel(pX,i)!=bgY){
+			vertY = i;
+			i = imageH;
+		}
+	}
 	run("Select None");
 	xSeqCoords = newArray();
 	ySeqCoords = newArray();
@@ -162,12 +181,13 @@
 	}
 	leftX -= 1; /* leftX++ correct etc. */
 	leftY -= 1;
+
 	startCoordOptions = newArray("Manual entry");
 	if (objectType=="Horizontal_line") startCoordOptions = Array.concat("Left  pixel \("+leftX+","+leftY+"\)",startCoordOptions);
 	else if (objectType=="Vertical_line") startCoordOptions = Array.concat("Top pixel \("+topX+","+topY+"\)",startCoordOptions);
-	else startCoordOptions = Array.concat("Left  pixel \("+leftX+","+leftY+"\)","Top pixel \("+topX+","+topY+"\)",startCoordOptions);
+	else startCoordOptions = Array.concat("Leftmost  pixel \("+leftX+","+leftY+"\)","Topmost pixel \("+topX+","+topY+"\)","90 degree left edge \("+horizX+","+pY+"\)","Zero degrees \(top\) edge \("+pX+","+vertY+"\)",startCoordOptions);
 	Dialog.create("Unraveling options 3: \(" + macroL + "\)");
-		Dialog.addRadioButtonGroup("Starting point:",startCoordOptions,startCoordOptions.length,1,startCoordOptions[0]);
+		Dialog.addRadioButtonGroup("Starting point:",startCoordOptions,startCoordOptions.length,1,startCoordOptions[1]);
 		Dialog.addNumber("Intensity cut off and output intensity minimum",20,0,4,"");
 		Dialog.addNumber("Output intensity maximum",180,0,4,"");
 		Dialog.addNumber("Manual start x",0,0,3,"pixels");
@@ -177,7 +197,9 @@
 			Dialog.addCheckbox("Try to start clockwise?",true);
 			Dialog.addCheckbox("Output rotational sequence values",continuous);
 		}
-		Dialog.addCheckbox("Keep image showing pixel sequence and spline fit",true);
+		Dialog.addCheckbox("Keep image showing pixel sequence and spline fit unless there are unsequnced pixels",true);
+		Dialog.addCheckbox("Use overlay to highlight unsequence pixel locations",true);
+		Dialog.addString("Overlay color for highlighting unsequenced pixels","#099FFF",10);
 	Dialog.show;
 		startCoordOption = Dialog.getRadioButton();
 		minInt = Dialog.getNumber();
@@ -194,6 +216,8 @@
 			angleOut = false;
 		}
 		keepPixelSequence = Dialog.getCheckbox();
+		unsequencedOverlay = Dialog.getCheckbox();
+		unsequencedOverlayColor = Dialog.getString();
 	if (!diagnostics) setBatchMode(true);
 	// getRawStatistics(nPixels, meanPx, minPx, maxPx);
 	if (startsWith(startCoordOption,"Top")){
@@ -203,6 +227,14 @@
 	else if (startsWith(startCoordOption,"Left")){
 		x = leftX;
 		y = leftY;
+	}
+	else if (startsWith(startCoordOption,"90")){
+		x = horizX;
+		y = pY;
+	}
+	else if (startsWith(startCoordOption,"Zero")){
+		x = pX;
+		y = vertY;
 	}
 	startPixelInt = getPixel(x,y);
 	if (startPixelInt>maxInt) exit ("Start pixel \(" + x + ", " + y + "\) intensity = " + startPixelInt);
@@ -420,6 +452,7 @@
 	else exit("Unidentified reference location");
 	IJ.log("Reference locations: x = " + xRef + ", y = " + yRef);
 	radianAngles = newArray();
+	degreeAngles = newArray();
 	radianOffsets = newArray();
 	radianIncrements = newArray(0,0);
 	degreeOffsets = newArray();
@@ -437,6 +470,7 @@
 			radianIncrements[i] = radInc;
 			degreeIncrements[i] = radInc * 180/PI;
 		}
+		degreeAngles[i] = radianAngles[i] * 180/PI;
 	}
 	Array.getStatistics(degreeIncrements, degreeIncrements_min, degreeIncrements_max, degreeIncrements_mean, degreeIncrements_stdDev);
 	if(degreeIncrements_mean<0){
@@ -484,6 +518,7 @@
 		else Table.setColumn(distName + "_norm^2",normRelDistSqs);
 		if(angleOut){
 			Table.setColumn("Angle \(radians\)",radianAngles);
+			Table.setColumn("Angle \(degrees\)",degreeAngles);
 			Table.setColumn("Angle Offset \(radians\)",radianOffsets);
 			Table.setColumn("Angle Offset \(degrees\)",degreeOffsets);
 			Table.setColumn("Angle Incr. \(radians\)",radianIncrements);
@@ -502,13 +537,17 @@
 	clockwise = clockwiseIncr;
 	Dialog.create("Output and Height map options: " + macroL);
 		Dialog.addMessage(seqPixN + " interface pixels found");
-		Dialog.addCheckbox("Filter out reverse direction(no re-entrant angles)?",continuous);
+		Dialog.addCheckbox("Filter out direction discontinuity(no re-entrant surfaces)?",continuous);
+		/* if the unravelling points change direction they are ignored until the previous angular extent is exceeded */
+		Dialog.addCheckbox("Re-normalize directional dataset as selected above",continuous);
 		Dialog.addCheckbox("Save directional dataset as selected above",continuous);
+		Dialog.addCheckbox("Identify filtered pixel set on sequence image",continuous);
+		Dialog.addString("Color for filtered pixel overlay","#FF6037",10);
 		if (hMap){
 			Dialog.addNumber("Evaluation length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
 			Dialog.addNumber("Sub-sample measurements \(1 = none\):",maxOf(1,round(seqPixN/4000)),0,10,"");
-			Dialog.addCheckbox("Map should be saved as uncompressed TIFF; go ahead?",true);
+			Dialog.addCheckbox("Save height map \(should be saved as uncompressed TIFF\)",true);
 		}
 		if (angleOut){
 			Dialog.addCheckbox("Sort data by offset angle (not useful if direction filtered)?",false);
@@ -517,7 +556,10 @@
 		}
 	Dialog.show();
 		oneDirection = Dialog.getCheckbox();
-		filteredCSV =  Dialog.getCheckbox();
+		filteredNorm =  minOf(oneDirection,Dialog.getCheckbox());
+		filteredCSV =  minOf(oneDirection,Dialog.getCheckbox());
+		filteredOverlay =  minOf(oneDirection,Dialog.getCheckbox());
+		filteredOverlayCol = Dialog.getString();
 		if (hMap){
 			lRef = Dialog.getNumber();
 			hMapN = Dialog.getNumber();
@@ -535,6 +577,7 @@
 		outPTPDistTotalEvals = newArray(0,0);
 		for (i=0;i<seqPixN;i++) outPTPDistTotalEvals[i] = ptpSDistancesTotal[i]/evalLF;
 		Table.setColumn("Seq_dist_NormToEval\("+unit+"\)", outPTPDistTotalEvals);
+		Table.update;
 		outRelDists = sNormRelDistances;
 		outRelDistSqs = sNormRelDistSqs;
 	}
@@ -554,6 +597,7 @@
 		oneDirOutDegreeIncrements = newArray(0,0);
 		oneDirXSeqCoords = newArray(xSeqCoords[0],0);
 		oneDirYSeqCoords = newArray(xSeqCoords[0],0);
+		oneDirOriginalIDs = newArray(0,0);
 		if(gotScale) oneDirOutRelDistsSq = newArray();
 		if(clockwise) angle = 360;
 		else angle = -1;
@@ -564,6 +608,7 @@
 					oneDirOutDegreeOffsets[k] = angle;
 					oneDirOutDegreeIncrements[k] = abs(oneDirOutDegreeOffsets[k]-oneDirOutDegreeOffsets[k-1]);
 				}
+				Table.set("Directional_continuity",i,true);
 				oneDirOutPTPDists[k] = outPTPDists[i];
 				oneDirOutPTPDistTotals[k] = outPTPDistTotals[i];
 				oneDirOutRelDists[k] = outRelDists[i];
@@ -571,23 +616,37 @@
 				oneDirOutPTPDistTotalEvals[k] = outPTPDistTotalEvals[i];
 				oneDirXSeqCoords[k] = xSeqCoords[i];
 				oneDirYSeqCoords[k] = ySeqCoords[i];
+				oneDirOriginalIDs[k] = i;
 				k++;
 			}
+			else Table.set("Directional_continuity",i,false);
 		}
 		fPixN = oneDirOutRelDists.length;
 		IJ.log (fPixN + " direction-filtered pixels out of original " + seqPixN);
+		if (filteredNorm){
+			Array.getStatistics(oneDirOutRelDists,minOutRel,null,null,null);
+			for (i=0;i<fPixN;i++){
+				oneDirOutRelDists[i] -= minOutRel;
+				oneDirOutRelDistSqs[i] = pow(oneDirOutRelDists[i],2);
+			}
+		} 
+		else{
+			outRelDists = oneDirOutRelDists;
+			outRelDistSqs = oneDirOutRelDistSqs;
+		} 
 		xSeqCoords = oneDirXSeqCoords;
 		ySeqCoords = oneDirYSeqCoords;
 		outPTPDists = oneDirOutPTPDists;
 		outPTPDistTotals = oneDirOutPTPDistTotals;
+		outPTPDistTotalEvals = oneDirOutPTPDistTotalEvals;
 		outRelDists = oneDirOutRelDists;
 		outRelDistSqs = oneDirOutRelDistSqs;
-		outPTPDistTotalEvals = oneDirOutPTPDistTotalEvals;
 		if(angleOut){
 			degreeOffsets = oneDirOutDegreeOffsets;
 			degreeIncrements = oneDirOutDegreeIncrements;
 		}
 		seqPixN = fPixN;
+		Table.update;
 	}
 	else if (sortByAngle){
 		if (clockwise) Array.reverse(radianOffsets);
@@ -624,8 +683,12 @@
 		if(saveTIFF) saveAs("Tiff");
 	}
 	if(filteredCSV){
+		hideResultsAs("hiddenResults");
 		if(!gotScale) unit = "pixels";
 		Table.create("Results");
+		rowID = Array.getSequence(fPixN);
+		Table.setColumn("Seq_#",rowID);
+		Table.setColumn("Original_#",oneDirOriginalIDs);
 		Table.setColumn("Seq_coord_x",xSeqCoords);
 		Table.setColumn("Seq_coord_y",ySeqCoords);
 		Table.setColumn("Seq_incr\("+unit+"\)",outPTPDists);
@@ -640,26 +703,39 @@
 		tCSV1 = nTitle + "_directional_outputCSV";
 		outputCSVPath = dir + tCSV1 +".csv";
 		updateResults();
-		saveAs("Results", outputCSVPath);
+		if(File.exists(outputCSVPath)){
+			 if(getBoolean("Overwrite " + tCSV1 +".csv?")) saveAs("Results", outputCSVPath);
+		}
+		else saveAs("Results", outputCSVPath);
 		run("Close");
 		restoreResultsFrom("hiddenResults");
+		if(filteredOverlay && isOpen(tempID)){
+			selectImage(tempID);
+			makeSelection("polyline", xSeqCoords, ySeqCoords);
+			Roi.setName("Filter coordinates");
+			Overlay.addSelection(filteredOverlayCol, 1);
+			run("Select None");
+		}
 	}
-	selectImage(tempID);
-	getRawStatistics(nPixels, meanPx, minPx, maxPx);
-	if (minPx==0){
-		selectWindow(nTitle);
-		run("Create Selection");
-		pArea = getValue("Area raw");
-		IJ.log("Warning: " + pArea + " non-Sequenced pixels\n____");
-		highlightS = minOf(4,maxOf(1,(imageW+imageH)/400));
-		run("Enlarge...", "enlarge=&highlightS pixel");
-		Overlay.addSelection("#099FFF", highlightS);
-		nTitle += "+unsequenced_pxls";
-				rename(nTitle);
-		run("Select None");
-		keepPixelSequence = true;
+	if(isOpen(tempID) && unsequencedOverlay){
+		selectImage(tempID);
+		getRawStatistics(nPixels, meanPx, minPx, maxPx);
+		if (minPx==0){
+			selectWindow(nTitle);
+			run("Create Selection");
+			pArea = getValue("Area raw");
+			IJ.log("Warning: " + pArea + " non-Sequenced pixels\n____");
+			highlightS = minOf(4,maxOf(1,(imageW+imageH)/400));
+			run("Enlarge...", "enlarge=&highlightS pixel");
+			Roi.setName("Non-sequenced pixels");
+			Overlay.addSelection(unsequencedOverlayColor, highlightS);
+			nTitle += "+unsequenced_pxls";
+			rename(nTitle);
+			run("Select None");
+			keepPixelSequence = true;
+		}
+		else if(!diagnostics) close(tempID);
 	}
-	else if(!diagnostics) close(tempID);
 	if (!diagnostics){
 		closeImageByTitle(refLTitle);
 		if(!keepPixelSequence) closeImageByTitle(nTtitle);
@@ -724,15 +800,12 @@
 		}
 	}
 	function restoreResultsFrom(deactivatedResults) {
-		/* v230213	extra close check */
+		/* v230214	extra close check */
 		if (isOpen(deactivatedResults)) {
 			selectWindow(deactivatedResults);
 			IJ.renameResults("Results");
 		}
-		if (isOpen(deactivatedResults)) {
-			selectWindow(deactivatedResults);
-			close();
-		}
+		// if (isOpen(deactivatedResults)) close(deactivatedResults);
 	}
 	function stripKnownExtensionFromString(string) {
 		/*	Note: Do not use on path as it may change the directory names
