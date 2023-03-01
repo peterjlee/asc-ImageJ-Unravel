@@ -17,8 +17,9 @@
 	v230213 Adds column of sequential distance normalized to the evaluation length and adds option to output direction filtered results to csv file.
 	v230214 Adds directional continuity flag to primary Results table, overlay display of filtered sequence, simple color options for overlays. Add zero degree start option and fixes disappearing Results window.
 	v230228 Adds directional directional output from v230214 to horizontal and vertical lines - and fixes issues created with horizontal and vertical lines produced by v230214. Added color choices for overlays. Ra and Rq corrected relative to meanline.
+	v230301 Changed name of pArea/pPerimeter ratio and more cosmetic changes to Dialog 1.
 */
-	macroL = "Unravel_interface_v230228.ijm";
+	macroL = "Unravel_interface_v230301.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -47,13 +48,13 @@
 	oAR = getValue("AR");
 	oAngle = getValue("Angle");
 	pPerimeter = getValue("Perim. raw");
-	linity = pPerimeter/pArea;
+	pxPpxARatio = pPerimeter/pArea;
 	run("Select None");
 	run("Fill Holes");
 	getRawStatistics(nPixels, meanPx, minPx, maxPx);
 	pFArea = (maxPx/meanPx-1)*nPixels;
 	run("Undo");
-	if (linity>0.95){
+	if (pxPpxARatio>0.95){
 		if (pFArea/pArea>=1.1) objectType = "Continuous_outline";
 		else if (oSolidity<1){
 			if (oAngle<45 || oAngle>135) objectType = "Horizontal_line";
@@ -101,11 +102,11 @@
 		if(oChannels+oSlices+oFrames!=3) Dialog.addMessage("Warning: This macro has only been tested on single slice-frame-channel images",12,"red");
 		if (isOpen("Results")) Dialog.addCheckbox("Close open Results window?",true);
 		Dialog.addRadioButtonGroup("Object type:",objectTypes,objectTypes.length,1,objectType);
-		message2 = "Identified object type: " + objectType + "  from:";
-		message2 += "\nTotal pixels:           " + pArea + "\nBlack pixels after fill: " + pFArea;
-		message2 += "\nAspect ratio:           " + oAR + "\nPerimeter:               " + pPerimeter + " pixels";
-		message2 += "\nSolidity:                    " + oSolidity + "\nAngle:                      " + oAngle + " degrees";
-		message2 += "\n'linity' \(pPerimeter/pArea\): " + linity;
+		message2 = "Identified object type: " + objectType + "       from:";
+		message2 += "\nTotal pixels:                   " + pArea + "\nBlack pixels after fill:   " + pFArea;
+		message2 += "\nAspect ratio:                   " + oAR + "\nPerimeter:                       " + pPerimeter + " pixels";
+		message2 += "\nSolidity:                            " + oSolidity + "\nAngle:                              " + oAngle + " degrees";
+		message2 += "\npPer.:pArea ratio:          " + pxPpxARatio;
 		Dialog.addMessage(message2);
 	Dialog.show;
 		closeOpenResults = Dialog.getCheckbox();
