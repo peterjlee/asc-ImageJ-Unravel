@@ -16,8 +16,9 @@
 	v230211 Adds angle increment columns and directional filtering (useful if you have re-entrant angles).
 	v230213 Adds column of sequential distance normalized to the evaluation length and adds option to output direction filtered results to csv file.
 	v230214 Adds directional continuity flag to primary Results table, overlay display of filtered sequence, simple color options for overlays. Add zero degree start option and fixes disappearing Results window.
+	v230228 Adds directional directional output from v230214 to horizontal and vertical lines - and fixes issues created with horizontal and vertical lines produced by v230214. Added color choices for overlays. Ra and Rq corrected relative to meanline.
 */
-	macroL = "Unravel_interface_v230214.ijm";
+	macroL = "Unravel_interface_v230228.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -54,13 +55,13 @@
 	run("Undo");
 	if (linity>0.95){
 		if (pFArea/pArea>=1.1) objectType = "Continuous_outline";
-		else if (oSolidity==1){
-			if (oAngle<45) objectType = "Horizontal_line";
+		else if (oSolidity<1){
+			if (oAngle<45 || oAngle>135) objectType = "Horizontal_line";
 			else objectType = "Vertical_line";
 		}
-	} 
-	else if (pFArea/pArea<1.1 || oSolidity>0.5)	objectType = "Solid_object";
-	else objectType = "Something_else";
+		else objectType = "Something_else";
+	}
+	else if (pFArea/pArea<1.1 || oSolidity>0.5) objectType = "Solid_object";
 	if (objectType=="Solid_object") safeBuffer = round(pPerimeter/20);
 	else {
 		run("Create Selection");
@@ -88,12 +89,24 @@
 	getDimensions(imageW, imageH, oChannels, oSlices, oFrames);
 	objectTypes = newArray("Continuous_outline","Solid_object","Horizontal_line","Vertical_line","Something_else");
 	setBatchMode("exit and display");
+	grayChoices = newArray("white", "black", "off-white", "off-black", "light_gray", "gray", "dark_gray");
+	colorChoicesStd = newArray("red", "green", "blue", "cyan", "magenta", "yellow", "pink", "orange", "violet");
+	colorChoicesMod = newArray("garnet", "gold", "aqua_modern", "blue_accent_modern", "blue_dark_modern", "blue_modern", "blue_honolulu", "gray_modern", "green_dark_modern", "green_modern", "green_modern_accent", "green_spring_accent", "orange_modern", "pink_modern", "purple_modern", "red_n_modern", "red_modern", "tan_modern", "violet_modern", "yellow_modern");
+	colorChoicesNeon = newArray("jazzberry_jam", "radical_red", "wild_watermelon", "outrageous_orange", "supernova_orange", "atomic_tangerine", "neon_carrot", "sunglow", "laser_lemon", "electric_lime", "screamin'_green", "magic_mint", "blizzard_blue", "dodger_blue", "shocking_pink", "razzle_dazzle_rose", "hot_magenta");
+	colorChoices = Array.concat(colorChoicesStd, colorChoicesMod, colorChoicesNeon, grayChoices);
 	Dialog.create("Unraveling options 1: \(" + macroL + "\)");
-		Dialog.addMessage("This macro currently only works on individual objects of the types listed below:");
+		message1 = "This macro currently only works on individual objects";
+		if(expCanvas) message1 += "\nThe working image has been expanded to accommodate curve fitting options";
+		Dialog.addMessage(message1);
 		if(oChannels+oSlices+oFrames!=3) Dialog.addMessage("Warning: This macro has only been tested on single slice-frame-channel images",12,"red");
 		if (isOpen("Results")) Dialog.addCheckbox("Close open Results window?",true);
 		Dialog.addRadioButtonGroup("Object type:",objectTypes,objectTypes.length,1,objectType);
-		Dialog.addMessage("Identified object type: " + objectType+ "  from:\nTotal pixels: " + pArea + "\nBlack pixels after fill: " + pFArea + "\nAspect ratio: " + oAR + "\nPerimeter: " + pPerimeter + " pixels\nSolidity: " + oSolidity + "\nAngle: " + oAngle);
+		message2 = "Identified object type: " + objectType + "  from:";
+		message2 += "\nTotal pixels:           " + pArea + "\nBlack pixels after fill: " + pFArea;
+		message2 += "\nAspect ratio:           " + oAR + "\nPerimeter:               " + pPerimeter + " pixels";
+		message2 += "\nSolidity:                    " + oSolidity + "\nAngle:                      " + oAngle + " degrees";
+		message2 += "\n'linity' \(pPerimeter/pArea\): " + linity;
+		Dialog.addMessage(message2);
 	Dialog.show;
 		closeOpenResults = Dialog.getCheckbox();
 		objectType = Dialog.getRadioButton();
@@ -129,6 +142,8 @@
 			Dialog.addNumber("Sub-sample interval for spline",defSmoothN,0,4,"pixels");
 			Dialog.addMessage("Default interval of " + defSmoothN + " pixels based on 2% of original pixels in line\n");
 		}
+		iFitCol = indexOfArray(colorChoices,call("ij.Prefs.get", "asc_unravel.fit.col","screamin'_green"),2);
+		Dialog.addChoice("Overlay color for fits",colorChoices,colorChoices[iFitCol]);
 		/* Fewer outline-skeletonized pixels will be missed from the unravel sequence, so skeletonizing the line/outline is the default setting: */
 		Dialog.addCheckbox("Skeletonize outline/interface line \(could remove significant pixels\)",true); /* removes redundant pixels . . . but are they? */
 		Dialog.addCheckbox("Create pseudo-height map from interface",true);
@@ -137,6 +152,8 @@
 		refLength = Dialog.getRadioButton();
 		if (!endsWith(objectType,"_line")) smoothKeep = Dialog.getCheckbox();
 		smoothN = minOf(1000,Dialog.getNumber());
+		fitCol = Dialog.getChoice();
+		call("ij.Prefs.set", "asc_unravel.fit.col",fitCol);
 		skelGo = Dialog.getCheckbox();
 		hMap = Dialog.getCheckbox();
 		diagnostics = Dialog.getCheckbox();
@@ -181,13 +198,12 @@
 	}
 	leftX -= 1; /* leftX++ correct etc. */
 	leftY -= 1;
-
 	startCoordOptions = newArray("Manual entry");
 	if (objectType=="Horizontal_line") startCoordOptions = Array.concat("Left  pixel \("+leftX+","+leftY+"\)",startCoordOptions);
 	else if (objectType=="Vertical_line") startCoordOptions = Array.concat("Top pixel \("+topX+","+topY+"\)",startCoordOptions);
 	else startCoordOptions = Array.concat("Leftmost  pixel \("+leftX+","+leftY+"\)","Topmost pixel \("+topX+","+topY+"\)","90 degree left edge \("+horizX+","+pY+"\)","Zero degrees \(top\) edge \("+pX+","+vertY+"\)",startCoordOptions);
 	Dialog.create("Unraveling options 3: \(" + macroL + "\)");
-		Dialog.addRadioButtonGroup("Starting point:",startCoordOptions,startCoordOptions.length,1,startCoordOptions[1]);
+		Dialog.addRadioButtonGroup("Starting point:",startCoordOptions,startCoordOptions.length,1,startCoordOptions[0]);
 		Dialog.addNumber("Intensity cut off and output intensity minimum",20,0,4,"");
 		Dialog.addNumber("Output intensity maximum",180,0,4,"");
 		Dialog.addNumber("Manual start x",0,0,3,"pixels");
@@ -199,7 +215,8 @@
 		}
 		Dialog.addCheckbox("Keep image showing pixel sequence and spline fit unless there are unsequnced pixels",true);
 		Dialog.addCheckbox("Use overlay to highlight unsequence pixel locations",true);
-		Dialog.addString("Overlay color for highlighting unsequenced pixels","#099FFF",10);
+		iUSCol = indexOfArray(colorChoices,call("ij.Prefs.get", "asc_unravel.unseqpixels.col","dodger_blue"),0);
+		Dialog.addChoice("Overlay color for highlighting unsequenced pixels",colorChoices,colorChoices[iUSCol]);
 	Dialog.show;
 		startCoordOption = Dialog.getRadioButton();
 		minInt = Dialog.getNumber();
@@ -217,7 +234,8 @@
 		}
 		keepPixelSequence = Dialog.getCheckbox();
 		unsequencedOverlay = Dialog.getCheckbox();
-		unsequencedOverlayColor = Dialog.getString();
+		unsequencedOverlayColor = Dialog.getChoice();
+		call("ij.Prefs.set", "asc_unravel.unseqpixels.col",unsequencedOverlayColor);
 	if (!diagnostics) setBatchMode(true);
 	// getRawStatistics(nPixels, meanPx, minPx, maxPx);
 	if (startsWith(startCoordOption,"Top")){
@@ -314,8 +332,7 @@
 			ptpSDistances[i] = lcf * ptpDistances[i];
 			ptpSDistancesTotal[i] = lcf * ptpDistancesTotal[i];
 		}
-	} 
-	
+	}
 	Array.getStatistics(ptpDistancesTotal, ptpDistancesTotal_min, ptpDistancesTotal_max, ptpDistancesTotal_mean, ptpDistancesTotal_stdDev);
 	/* The following section provides an estimate of the total evaluation length */
 	selectWindow(refLTitle);
@@ -349,8 +366,10 @@
 		run("Select None");
 		selectWindow(nTitle);
 		run("Restore Selection");
-		Overlay.addSelection("#66FF66", minOf(1,maxOf(2,(imageW+imageH)/400)));
-		nTitle += "+" + refLength;
+		Roi.setName("Spline fit to " + smoothN + " pixel sub-sampling");
+		Overlay.addSelection(fitCol, minOf(1,maxOf(2,(imageW+imageH)/400)));
+		suffix = replace(refLength,"spline-fit",smoothN + "pixel-spline-fit");
+		nTitle += "+" + suffix;
 		rename(nTitle);
 		run("Select None");
 	}
@@ -392,8 +411,10 @@
 		run("Select None");
 		selectWindow(nTitle);
 		run("Restore Selection");
-		Overlay.addSelection("#66FF66", minOf(1,maxOf(2,(imageW+imageH)/400)));
-		nTitle += "+" + refLength;
+		Roi.setName("Fit");
+		Overlay.addSelection(fitCol, minOf(1,maxOf(2,(imageW+imageH)/400)));
+		suffix = replace(refLength,"Median",smoothN + "-pixel-Median");
+		nTitle += "+" + suffix;
 		rename(nTitle);
 		run("Select None");
 	}
@@ -451,35 +472,37 @@
 	}
 	else exit("Unidentified reference location");
 	IJ.log("Reference locations: x = " + xRef + ", y = " + yRef);
-	radianAngles = newArray();
-	degreeAngles = newArray();
-	radianOffsets = newArray();
-	radianIncrements = newArray(0,0);
-	degreeOffsets = newArray();
-	degreeIncrements = newArray(0,0);
-	for (i=0;i<seqPixN;i++){
-		radianAngles[i] = atan2(xRef-xSeqCoords[i],yRef-ySeqCoords[i]);
-		radOff = radianAngles[i] - radianAngles[0];
-		if (radOff<0) radianOffsets[i] = 2*PI + radOff;
-		else radianOffsets[i] = radOff;
-		degreeOffsets[i] = radianOffsets[i] * 180/PI;
-		if (i>0){
-			radInc = radianAngles[i] - radianAngles[i-1];
-			if(radInc>PI) radInc -= 2*PI;
-			else if (radInc<-PI) radInc += 2*PI;
-			radianIncrements[i] = radInc;
-			degreeIncrements[i] = radInc * 180/PI;
+	if (!endsWith(objectType,"_line")){
+		radianAngles = newArray();
+		degreeAngles = newArray();
+		radianOffsets = newArray();
+		radianIncrements = newArray(0,0);
+		degreeOffsets = newArray();
+		degreeIncrements = newArray(0,0);
+		for (i=0;i<seqPixN;i++){
+			radianAngles[i] = atan2(xRef-xSeqCoords[i],yRef-ySeqCoords[i]);
+			radOff = radianAngles[i] - radianAngles[0];
+			if (radOff<0) radianOffsets[i] = 2*PI + radOff;
+			else radianOffsets[i] = radOff;
+			degreeOffsets[i] = radianOffsets[i] * 180/PI;
+			if (i>0){
+				radInc = radianAngles[i] - radianAngles[i-1];
+				if(radInc>PI) radInc -= 2*PI;
+				else if (radInc<-PI) radInc += 2*PI;
+				radianIncrements[i] = radInc;
+				degreeIncrements[i] = radInc * 180/PI;
+			}
+			degreeAngles[i] = radianAngles[i] * 180/PI;
 		}
-		degreeAngles[i] = radianAngles[i] * 180/PI;
-	}
-	Array.getStatistics(degreeIncrements, degreeIncrements_min, degreeIncrements_max, degreeIncrements_mean, degreeIncrements_stdDev);
-	if(degreeIncrements_mean<0){
-		clockwiseIncr = true;
-		IJ.log("Apparent direction clockwise; mean advance " + degreeIncrements_mean + " degrees");
-	}
-	else {
-		clockwiseIncr = false;
-		IJ.log("Apparent direction anticlockwise; mean advance " + degreeIncrements_mean + " degrees");
+		Array.getStatistics(degreeIncrements, degreeIncrements_min, degreeIncrements_max, degreeIncrements_mean, degreeIncrements_stdDev);
+		if(degreeIncrements_mean<0){
+			clockwiseIncr = true;
+			IJ.log("Apparent direction clockwise; mean advance " + degreeIncrements_mean + " degrees");
+		}
+		else {
+			clockwiseIncr = false;
+			IJ.log("Apparent direction anticlockwise; mean advance " + degreeIncrements_mean + " degrees");
+		}
 	}
 	relDistances = newArray();
 	if (startsWith(objectType,"Vert")) for (i=0;i<seqPixN;i++) relDistances[i] = xSeqCoords[i];
@@ -492,12 +515,23 @@
 		normRelDistances[i] = relDistances[i] - relDistances_min;
 		normRelDistSqs[i] = pow(normRelDistances[i],2);
 	}
+	normRelDistances = newArray();
+	normRelDistanceFMeans = newArray();
+	normRelDistFMeanSqs = newArray();
+	for (i=0;i<seqPixN;i++) normRelDistances[i] = relDistances[i] - relDistances_min;
+	Array.getStatistics(normRelDistances,null,null,normRelDistances_mean,null);
+	for (i=0;i<seqPixN;i++){
+		normRelDistanceFMeans[i] = abs(normRelDistances[i]-normRelDistances_mean);
+		normRelDistFMeanSqs[i] = pow(normRelDistanceFMeans[i],2);
+	}
 	if(gotScale){
 		sNormRelDistances = newArray();
-		sNormRelDistSqs = newArray();
+		sNormRelDistanceFMeans = newArray();
+		sNormRelDistFMeanSqs = newArray();
 		for (i=0;i<seqPixN;i++){
 			sNormRelDistances[i] = lcf * normRelDistances[i];
-			sNormRelDistSqs[i] = pow(sNormRelDistances[i],2);
+			sNormRelDistanceFMeans[i] = lcf * normRelDistanceFMeans[i];
+			sNormRelDistFMeanSqs[i] = pow(sNormRelDistanceFMeans[i],2);
 		}
 	}
 	Table.setColumn("Seq_coord_x", xSeqCoords);
@@ -513,9 +547,10 @@
 		Table.setColumn(distName + "_norm\(px\)", normRelDistances);
 		if(gotScale){
 			Table.setColumn(distName + "_norm\("+unit+"\)", sNormRelDistances);
-			Table.setColumn(distName + "_norm^2\("+unit+"^2\)",sNormRelDistSqs);
+			Table.setColumn(distName + "_norm_from_Mean\("+unit+"\)", sNormRelDistanceFMeans);
+			Table.setColumn(distName + "_norm_from_Mean^2\("+unit+"^2\)",sNormRelDistFMeanSqs);
 		}
-		else Table.setColumn(distName + "_norm^2",normRelDistSqs);
+		else Table.setColumn(distName + "_normFromMean^2",normRelDistFMeanSqs);
 		if(angleOut){
 			Table.setColumn("Angle \(radians\)",radianAngles);
 			Table.setColumn("Angle \(degrees\)",degreeAngles);
@@ -530,11 +565,12 @@
 		Table.setColumn(distName + "_norm\(px\)", normRelDistances);
 		if(gotScale){
 			Table.setColumn(distName + "_norm\("+unit+"\)", sNormRelDistances);
-			Table.setColumn(distName + "_norm^2\("+unit+"^2\)", sNormRelDistSqs);
+			Table.setColumn(distName + "_norm_from_Mean\("+unit+"\)", sNormRelDistanceFMeans);
+			Table.setColumn(distName + "_norm_from_Mean^2\("+unit+"^2\)", sNormRelDistFMeanSqs);
 		}
 		else Table.setColumn(distName + "_norm^2",normRelDistSqs);
 	}
-	clockwise = clockwiseIncr;
+	if (!endsWith(objectType,"_line")) clockwise = clockwiseIncr;
 	Dialog.create("Output and Height map options: " + macroL);
 		Dialog.addMessage(seqPixN + " interface pixels found");
 		Dialog.addCheckbox("Filter out direction discontinuity(no re-entrant surfaces)?",continuous);
@@ -542,7 +578,8 @@
 		Dialog.addCheckbox("Re-normalize directional dataset as selected above",continuous);
 		Dialog.addCheckbox("Save directional dataset as selected above",continuous);
 		Dialog.addCheckbox("Identify filtered pixel set on sequence image",continuous);
-		Dialog.addString("Color for filtered pixel overlay","#FF6037",10);
+		iFiltCol = indexOfArray(colorChoices,call("ij.Prefs.get", "asc_unravel.filtered.col","outrageous_orange"),1);
+		Dialog.addChoice("Color for filtered pixel overlay",colorChoices,colorChoices[iFiltCol]);
 		if (hMap){
 			Dialog.addNumber("Evaluation length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
@@ -559,7 +596,8 @@
 		filteredNorm =  minOf(oneDirection,Dialog.getCheckbox());
 		filteredCSV =  minOf(oneDirection,Dialog.getCheckbox());
 		filteredOverlay =  minOf(oneDirection,Dialog.getCheckbox());
-		filteredOverlayCol = Dialog.getString();
+		filteredOverlayCol = Dialog.getChoice();
+		call("ij.Prefs.set", "asc_unravel.filtered.col",filteredOverlayCol);
 		if (hMap){
 			lRef = Dialog.getNumber();
 			hMapN = Dialog.getNumber();
@@ -570,6 +608,7 @@
 			sortByAngle = Dialog.getCheckbox();
 			clockwise = Dialog.getCheckbox();
 		}
+		else sortByAngle = false; 
 	if(gotScale) {
 		outPTPDists = ptpSDistances;
 		outPTPDistTotals = ptpSDistancesTotal;
@@ -579,68 +618,96 @@
 		Table.setColumn("Seq_dist_NormToEval\("+unit+"\)", outPTPDistTotalEvals);
 		Table.update;
 		outRelDists = sNormRelDistances;
-		outRelDistSqs = sNormRelDistSqs;
+		outRelDistFMeans = sNormRelDistanceFMeans;
+		outRelDistFMeanSqs = sNormRelDistFMeanSqs;
 	}
 	else{
 		outPTPDists = ptpDistances;
 		outPTPDistTotals = ptpDistancesTotal;
 		outRelDists = normRelDistances;
-		outRelDistSqs = normRelDistSq;
+		outRelDistFMeans = normRelDistanceFMeans;
+		outRelDistFMeanSqs = normRelDistFMeanSqs;
 	} 
 	if (oneDirection) {
 		oneDirOutPTPDists = newArray(0,0);
 		oneDirOutPTPDistTotals = newArray(0,0);
 		oneDirOutRelDists = newArray(outRelDists[0],0);
-		oneDirOutRelDistSqs = newArray(outRelDistSqs[0],0);
+		oneDirOutRelDistFMeans = newArray(outRelDistFMeans[0],0);
+		oneDirOutRelDistFMeanSqs = newArray(outRelDistFMeanSqs[0],0);
 		oneDirOutPTPDistTotalEvals = newArray(0,0);
-		oneDirOutDegreeOffsets = newArray(0,0);
-		oneDirOutDegreeIncrements = newArray(0,0);
 		oneDirXSeqCoords = newArray(xSeqCoords[0],0);
 		oneDirYSeqCoords = newArray(xSeqCoords[0],0);
 		oneDirOriginalIDs = newArray(0,0);
 		if(gotScale) oneDirOutRelDistsSq = newArray();
-		if(clockwise) angle = 360;
-		else angle = -1;
-		for(i=0,k=0; i<seqPixN; i++){
-			if((clockwise && degreeOffsets[i]<angle) || (!clockwise && degreeOffsets[i]>angle)){
-				if(i>0){
-					angle = degreeOffsets[i];
-					oneDirOutDegreeOffsets[k] = angle;
-					oneDirOutDegreeIncrements[k] = abs(oneDirOutDegreeOffsets[k]-oneDirOutDegreeOffsets[k-1]);
+		if(startsWith(objectType,"Vert") || startsWith(objectType,"Horiz")){
+			oneDirOrthOffsets = newArray(0,0);
+			oneDirOrthIncrements = newArray(0,0);
+			for(i=0,k=0,orthDist=-1; i<seqPixN; i++){
+				if (startsWith(objectType,"Vert")) orthOffset = ySeqCoords[i]-ySeqCoords_min;
+				else orthOffset = xSeqCoords[i]-xSeqCoords_min;
+				if (orthOffset>orthDist){
+					if(i>0){
+						orthDist = orthOffset;
+						oneDirOrthOffsets[k] = orthDist;
+						oneDirOrthIncrements[k] = orthDist - oneDirOrthOffsets[k-1];
+					}
+					Table.set("Directional_continuity",i,true);
+					oneDirOutPTPDists[k] = outPTPDists[i];
+					oneDirOutPTPDistTotals[k] = outPTPDistTotals[i];
+					oneDirOutRelDists[k] = outRelDists[i];
+					oneDirOutRelDistFMeans[k] = outRelDistFMeans[i];
+					oneDirOutRelDistFMeanSqs[k] = outRelDistFMeanSqs[i];
+					oneDirOutPTPDistTotalEvals[k] = outPTPDistTotalEvals[i];
+					oneDirXSeqCoords[k] = xSeqCoords[i];
+					oneDirYSeqCoords[k] = ySeqCoords[i];
+					oneDirOriginalIDs[k] = i;
+					k++;
 				}
-				Table.set("Directional_continuity",i,true);
-				oneDirOutPTPDists[k] = outPTPDists[i];
-				oneDirOutPTPDistTotals[k] = outPTPDistTotals[i];
-				oneDirOutRelDists[k] = outRelDists[i];
-				oneDirOutRelDistSqs[k] = outRelDistSqs[i];
-				oneDirOutPTPDistTotalEvals[k] = outPTPDistTotalEvals[i];
-				oneDirXSeqCoords[k] = xSeqCoords[i];
-				oneDirYSeqCoords[k] = ySeqCoords[i];
-				oneDirOriginalIDs[k] = i;
-				k++;
+				else Table.set("Directional_continuity",i,false);
 			}
-			else Table.set("Directional_continuity",i,false);
 		}
-		fPixN = oneDirOutRelDists.length;
+		else {
+			if(clockwise) angle = 360;
+			else angle = -1;
+			oneDirOutDegreeOffsets = newArray(0,0);
+			oneDirOutDegreeIncrements = newArray(0,0);
+			for(i=0,k=0; i<seqPixN; i++){
+				if((clockwise && degreeOffsets[i]<angle) || (!clockwise && degreeOffsets[i]>angle)){
+					if(i>0){
+						angle = degreeOffsets[i];
+						oneDirOutDegreeOffsets[k] = angle;
+						oneDirOutDegreeIncrements[k] = abs(oneDirOutDegreeOffsets[k]-oneDirOutDegreeOffsets[k-1]);
+					}
+					Table.set("Directional_continuity",i,true);
+					oneDirOutPTPDists[k] = outPTPDists[i];
+					oneDirOutPTPDistTotals[k] = outPTPDistTotals[i];
+					oneDirOutRelDists[k] = outRelDists[i];
+					oneDirOutRelDistFMeans[k] = outRelDistFMeans[i];
+					oneDirOutRelDistFMeanSqs[k] = outRelDistFMeanSqs[i];
+					oneDirOutPTPDistTotalEvals[k] = outPTPDistTotalEvals[i];
+					oneDirXSeqCoords[k] = xSeqCoords[i];
+					oneDirYSeqCoords[k] = ySeqCoords[i];
+					oneDirOriginalIDs[k] = i;
+					k++;
+				}
+				else Table.set("Directional_continuity",i,false);
+			}
+		}
+		fPixN = k;
 		IJ.log (fPixN + " direction-filtered pixels out of original " + seqPixN);
 		if (filteredNorm){
-			Array.getStatistics(oneDirOutRelDists,minOutRel,null,null,null);
+			Array.getStatistics(oneDirOutRelDists,minOutRel,null,meanOutRel,null);
 			for (i=0;i<fPixN;i++){
-				oneDirOutRelDists[i] -= minOutRel;
-				oneDirOutRelDistSqs[i] = pow(oneDirOutRelDists[i],2);
+				oneDirOutRelDists[i] = abs(oneDirOutRelDists[i] - minOutRel);
+				oneDirOutRelDistFMeans[i] = abs(oneDirOutRelDists[i] - meanOutRel);
+				oneDirOutRelDistFMeanSqs[i] = pow(oneDirOutRelDistFMeans[i],2);
 			}
-		} 
-		else{
-			outRelDists = oneDirOutRelDists;
-			outRelDistSqs = oneDirOutRelDistSqs;
 		} 
 		xSeqCoords = oneDirXSeqCoords;
 		ySeqCoords = oneDirYSeqCoords;
 		outPTPDists = oneDirOutPTPDists;
 		outPTPDistTotals = oneDirOutPTPDistTotals;
 		outPTPDistTotalEvals = oneDirOutPTPDistTotalEvals;
-		outRelDists = oneDirOutRelDists;
-		outRelDistSqs = oneDirOutRelDistSqs;
 		if(angleOut){
 			degreeOffsets = oneDirOutDegreeOffsets;
 			degreeIncrements = oneDirOutDegreeIncrements;
@@ -650,12 +717,26 @@
 	}
 	else if (sortByAngle){
 		if (clockwise) Array.reverse(radianOffsets);
-		Array.sort(radianOffsets,xSeqCoords,ySeqCoords,outPTPDists,outPTPDistTotals,outRelDists,outRelDistSqs);
+		Array.sort(radianOffsets,xSeqCoords,ySeqCoords,outPTPDists,outPTPDistTotals,outRelDists,outRelDistFMeans,outRelDistFMeanSqs);
 	}
 	if(gotScale){
-		Array.getStatistics(outRelDists, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
-		Array.getStatistics(outRelDistSqs, null, null, hSq_mean, null);
-		IJ.log("_________\n" + nTitle + " height statistics:\nmin = " + hStat_min + " " + unit + "\nmax = " + hStat_max + " " + unit + "\nrange = " + hStat_max-hStat_min + " " + unit +"\nmean = " + hStat_mean + " " + unit + "\nstd Dev = " + hStat_stdDev + " " + unit + "\nRa\(full length) = " + hStat_mean  + " " + unit + "\nRq\(full length\) = " + sqrt(hSq_mean)  + " " + unit +  "\n_________");
+		if (oneDirection){
+			Array.getStatistics(oneDirOutRelDists, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
+			Array.getStatistics(oneDirOutRelDistFMeans, hStatFMean_min, hStatFMean_max, hStatFMean_mean, hStatFMean_stdDev);
+			Array.getStatistics(oneDirOutRelDistFMeanSqs, hStatFMeanSq_min, hStatFMeanSq_max, hStatFMeanSq_mean, hStatFMeanSq_stdDev);
+		}
+		else {
+			Array.getStatistics(outRelDists, hStat_min, hStat_max, hStat_mean, hStat_stdDev);
+			Array.getStatistics(outRelDistFMeans, hStatFMean_min, hStatFMean_max, hStatFMean_mean, hStatFMean_stdDev);
+			Array.getStatistics(outRelDistFMeanSqs, hStatFMeanSq_min, hStatFMeanSq_max, hStatFMeanSq_mean, hStatFMeanSq_stdDev);
+		}
+		hStats = "_________\n" + nTitle + " height statistics:\nmin = " + hStat_min + " " + unit + "\nmax = " + hStat_max + " " + unit;
+		hStats += "\nrange = " + hStat_max-hStat_min + " " + unit +"\nmean = " + hStat_mean + " " + unit + "\nstd Dev = " + hStat_stdDev + " " + unit;
+		hStats += "\n_________Deviation from Mean_________:\nmin = " + hStatFMean_min + " " + unit + "\nmax = " + hStatFMean_max + " " + unit  +"\nmean = " + hStatFMean_mean + " " + unit + "\nstd Dev = " + hStatFMean_stdDev + " " + unit;
+		hStats += "\n_________The simple R values below do not have waviness extracted_____";
+		hStats += "\nRa\(full length\) = " + hStatFMean_mean  + " " + unit + "\nRq\(full length\) = " + sqrt(hStatFMeanSq_mean)  + " " + unit +  "\n_________";		
+		IJ.log(hStats);
+		/* Note these are full wave amplitudes i.e. not mean subtracted */
 		fAmps = Array.fourier(sNormRelDistances);
 		fAmpsCol = "Fourier_amps";
 		if(oneDirection) fAmpsCol += "_uni-dir.";
@@ -698,8 +779,9 @@
 			Table.setColumn("Angle Incr. \(degrees\)",degreeIncrements);
 			Table.setColumn("Angle Offset \(degrees\)",degreeOffsets);
 		} 
-		Table.setColumn(distName + "_norm\("+unit+"\)",outRelDists);
-		Table.setColumn(distName + "_norm^2\("+unit+"^2\)",outRelDistSqs);
+		Table.setColumn(distName + "_norm\("+unit+"\)",oneDirOutRelDists);
+		Table.setColumn(distName + "_norm_from_Mean\("+unit+"\)",oneDirOutRelDistFMeans);
+		Table.setColumn(distName + "_norm_from_Mean^2\("+unit+"^2\)",oneDirOutRelDistFMeanSqs);
 		tCSV1 = nTitle + "_directional_outputCSV";
 		outputCSVPath = dir + tCSV1 +".csv";
 		updateResults();
@@ -715,6 +797,8 @@
 			Roi.setName("Filter coordinates");
 			Overlay.addSelection(filteredOverlayCol, 1);
 			run("Select None");
+			nTitle += "+" + "filtered";
+			rename(nTitle);
 		}
 	}
 	if(isOpen(tempID) && unsequencedOverlay){
@@ -743,8 +827,105 @@
 	// else selectWindow(oTitle);
 	setBatchMode("exit and display");
 	exit();
-	/* End of unraveling macro */
+	/* 
+	End of unraveling macro
+	*/
 /*
+	Color Functions
+*/
+	function getColorArrayFromColorName(colorName) {
+		/* v180828 added Fluorescent Colors
+		   v181017-8 added off-white and off-black for use in gif transparency and also added safe exit if no color match found
+		   v191211 added Cyan
+		   v211022 all names lower-case, all spaces to underscores v220225 Added more hash value comments as a reference v220706 restores missing magenta
+		   REQUIRES restoreExit function.  57 Colors v230130 Added more descriptions and modified order
+		*/
+		if (colorName == "white") cA = newArray(255,255,255);
+		else if (colorName == "black") cA = newArray(0,0,0);
+		else if (colorName == "off-white") cA = newArray(245,245,245);
+		else if (colorName == "off-black") cA = newArray(10,10,10);
+		else if (colorName == "light_gray") cA = newArray(200,200,200);
+		else if (colorName == "gray") cA = newArray(127,127,127);
+		else if (colorName == "dark_gray") cA = newArray(51,51,51);
+		else if (colorName == "off-black") cA = newArray(10,10,10);
+		else if (colorName == "light_gray") cA = newArray(200,200,200);
+		else if (colorName == "gray") cA = newArray(127,127,127);
+		else if (colorName == "dark_gray") cA = newArray(51,51,51);
+		else if (colorName == "red") cA = newArray(255,0,0);
+		else if (colorName == "green") cA = newArray(0,255,0); /* #00FF00 AKA Lime green */
+		else if (colorName == "blue") cA = newArray(0,0,255);
+		else if (colorName == "cyan") cA = newArray(0, 255, 255);
+		else if (colorName == "yellow") cA = newArray(255,255,0);
+		else if (colorName == "magenta") cA = newArray(255,0,255); /* #FF00FF */
+		else if (colorName == "pink") cA = newArray(255, 192, 203);
+		else if (colorName == "violet") cA = newArray(127,0,255);
+		else if (colorName == "orange") cA = newArray(255, 165, 0);
+		else if (colorName == "garnet") cA = newArray(120,47,64); /* #782F40 */
+		else if (colorName == "gold") cA = newArray(206,184,136); /* #CEB888 */
+		else if (colorName == "aqua_modern") cA = newArray(75,172,198); /* #4bacc6 AKA "Viking" aqua */
+		else if (colorName == "blue_accent_modern") cA = newArray(79,129,189); /* #4f81bd */
+		else if (colorName == "blue_dark_modern") cA = newArray(31,73,125); /* #1F497D */
+		else if (colorName == "blue_honolulu") cA = newArray(0,118,182); /* Honolulu Blue #30076B6 */
+		else if (colorName == "blue_modern") cA = newArray(58,93,174); /* #3a5dae */
+		else if (colorName == "gray_modern") cA = newArray(83,86,90); /* bright gray #53565A */
+		else if (colorName == "green_dark_modern") cA = newArray(121,133,65); /* Wasabi #798541 */
+		else if (colorName == "green_modern") cA = newArray(155,187,89); /* #9bbb59 AKA "Chelsea Cucumber" */
+		else if (colorName == "green_modern_accent") cA = newArray(214,228,187); /* #D6E4BB AKA "Gin" */
+		else if (colorName == "green_spring_accent") cA = newArray(0,255,102); /* #00FF66 AKA "Spring Green" */
+		else if (colorName == "orange_modern") cA = newArray(247,150,70); /* #f79646 tan hide, light orange */
+		else if (colorName == "pink_modern") cA = newArray(255,105,180); /* hot pink #ff69b4 */
+		else if (colorName == "purple_modern") cA = newArray(128,100,162); /* blue-magenta, purple paradise #8064A2 */
+		else if (colorName == "jazzberry_jam") cA = newArray(165,11,94);
+		else if (colorName == "red_n_modern") cA = newArray(227,24,55);
+		else if (colorName == "red_modern") cA = newArray(192,80,77);
+		else if (colorName == "tan_modern") cA = newArray(238,236,225);
+		else if (colorName == "violet_modern") cA = newArray(76,65,132);
+		else if (colorName == "yellow_modern") cA = newArray(247,238,69);
+		/* Fluorescent Colors https://www.w3schools.com/colors/colors_crayola.asp */
+		else if (colorName == "radical_red") cA = newArray(255,53,94);			/* #FF355E */
+		else if (colorName == "wild_watermelon") cA = newArray(253,91,120);		/* #FD5B78 */
+		else if (colorName == "shocking_pink") cA = newArray(255,110,255);		/* #FF6EFF Ultra Pink */
+		else if (colorName == "razzle_dazzle_rose") cA = newArray(238,52,210); 	/* #EE34D2 */
+		else if (colorName == "hot_magenta") cA = newArray(255,0,204);			/* #FF00CC AKA Purple Pizzazz */
+		else if (colorName == "outrageous_orange") cA = newArray(255,96,55);	/* #FF6037 */
+		else if (colorName == "supernova_orange") cA = newArray(255,191,63);	/* FFBF3F Supernova Neon Orange*/
+		else if (colorName == "sunglow") cA = newArray(255,204,51); 			/* #FFCC33 */
+		else if (colorName == "neon_carrot") cA = newArray(255,153,51);			/* #FF9933 */
+		else if (colorName == "atomic_tangerine") cA = newArray(255,153,102);	/* #FF9966 */
+		else if (colorName == "laser_lemon") cA = newArray(255,255,102); 		/* #FFFF66 "Unmellow Yellow" */
+		else if (colorName == "electric_lime") cA = newArray(204,255,0); 		/* #CCFF00 */
+		else if (colorName == "screamin'_green") cA = newArray(102,255,102); 	/* #66FF66 */
+		else if (colorName == "magic_mint") cA = newArray(170,240,209); 		/* #AAF0D1 */
+		else if (colorName == "blizzard_blue") cA = newArray(80,191,230); 		/* #50BFE6 Malibu */
+		else if (colorName == "dodger_blue") cA = newArray(9,159,255);			/* #099FFF Dodger Neon Blue */
+		else restoreExit("No color match to " + colorName);
+		return cA;
+	}
+	function setBackgroundFromColorName(colorName) {
+		colorArray = getColorArrayFromColorName(colorName);
+		setBackgroundColor(colorArray[0], colorArray[1], colorArray[2]);
+	}
+	function setColorFromColorName(colorName) {
+		colorArray = getColorArrayFromColorName(colorName);
+		setColor(colorArray[0], colorArray[1], colorArray[2]);
+	}
+	function setForegroundColorFromName(colorName) {
+		colorArray = getColorArrayFromColorName(colorName);
+		setForegroundColor(colorArray[0], colorArray[1], colorArray[2]);
+	}
+	/* Hex conversion below adapted from T.Ferreira, 20010.01 https://imagej.net/doku.php?id=macro:rgbtohex */
+	function pad(n) {
+	  /* This version by Tiago Ferreira 6/6/2022 eliminates the toString macro function */
+	  if (lengthOf(n)==1) n= "0"+n; return n;
+	  if (lengthOf(""+n)==1) n= "0"+n; return n;
+	}
+	function getHexColorFromRGBArray(colorNameString) {
+		colorArray = getColorArrayFromColorName(colorNameString);
+		 r = toHex(colorArray[0]); g = toHex(colorArray[1]); b = toHex(colorArray[2]);
+		 hexName= "#" + ""+pad(r) + ""+pad(g) + ""+pad(b);
+		 return hexName;
+	}
+/*	
 	( 8(|))  ( 8(|))  ( 8(|))  ASC Functions  @@@@@:-)  @@@@@:-)  @@@@@:-)
 */
 	function closeImageByTitle(windowTitle) {  /* Cannot be used with tables */
@@ -798,6 +979,17 @@
 			selectWindow("Results");
 			IJ.renameResults(deactivatedResults);
 		}
+	}
+	function indexOfArray(array, value, default) {
+		/* v190423 Adds "default" parameter (use -1 for backwards compatibility). Returns only first found value */
+		index = default;
+		for (i=0; i<lengthOf(array); i++){
+			if (array[i]==value) {
+				index = i;
+				i = lengthOf(array);
+			}
+		}
+	  return index;
 	}
 	function restoreResultsFrom(deactivatedResults) {
 		/* v230214	extra close check */
