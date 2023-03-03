@@ -45,7 +45,7 @@ overall shape or the cumulative pixel=pixel distance:</p>
 <p>The generated 32-bit height maps can be imported into Gwyddion for analysis:</p>
 <p><img src="/images/Gwyddion_import_example_417w.png" alt="Gwyddion analysis of pseudo-height-map." 
 width="417" /> </p>
-<p><img src="/images/Unravel_Gwyddion-CircOutline_PAL256_481w.png" alt="Gwyddion projection" width="764" 
+<p><img src="/images/Unravel_Gwyddion-CircOutline_PAL256_481w.png" alt="Gwyddion projection" width="481" 
 /> </p>
 <p>Enabling a comprehensive roughness analysis:</p>
 <p><img src="/images/Unravel_GwyddionAnalysis_1101w.png" alt="Gwyddion analysis of pseudo-height-map." 
