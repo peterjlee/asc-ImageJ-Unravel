@@ -24,23 +24,23 @@ cross-section by the Unravel macro." height="51" /> </p>
 <br />
   <p>Sampling length is important for extracting roughness values and sample length can be derived from the 
 overall shape or the cumulative pixel=pixel distance:</p>
-<p><img src="/images/Unravel_Menu1_480w.png" alt="Unravel menu 1" width="480" /> </p>
+<p><img src="/images/Unravel_Menu1_v230301_474w_PAL32.png" alt="Unravel menu 1" width="474" /> </p>
 
 <p>Evaluation lengths can be estimated for a variety of topologies:</p>
 
-<p><img src="/images/Unravel_Menu2-CircOutline_510w.png" alt="Unravel menu 2" width="338" /> </p>
+<p><img src="/images/Unravel_Menu2_v230228_PAL64_537w.png" alt="Unravel menu 2" width="537" /> </p>
 
 <p>The start points can be chosen automatically or manually and also the direction of the sequence:</p>
 
-<p><img src="/images/Unravel_Menu3-CircOutline_681w.png" alt="Unravel menu 3" width="355" /> </p>
+<p><img src="/images/Unravel_Menu3_v230301_PAL64_474w.png" alt="Unravel menu 3" width="474" /> </p>
 
 <p>The reference location(s) for the 'height' measurements can be selected:</p>
 
-<p><img src="/images/Unravel_HeightRefMenu-CircOutline_500w.png" alt="Height referencing" width="500" /> </p>
+<p><img src="/images/Unravel_Menu-RefCoordinates_v230301_PAL64_379w.png" alt="Height referencing" width="379" /> </p>
 
 <p>A pseudo-height map can be generated for import into dedicatedsurface analysis software:</p>
 
-<p><img src="/images/asc-Unravel_pHMap_512w.png" alt="Height referencing" width="512" /> </p>
+<p><img src="/images/Unravel_Menu-Filt-Output_v230303_PAL64_549w.png" alt="Height referencing" width="594" /> </p>
 
 <p>The generated 32-bit height maps can be imported into Gwyddion for analysis:</p>
 <p><img src="/images/Gwyddion_import_example_417w.png" alt="Gwyddion analysis of pseudo-height-map." 

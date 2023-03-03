@@ -17,9 +17,10 @@
 	v230213 Adds column of sequential distance normalized to the evaluation length and adds option to output direction filtered results to csv file.
 	v230214 Adds directional continuity flag to primary Results table, overlay display of filtered sequence, simple color options for overlays. Add zero degree start option and fixes disappearing Results window.
 	v230228 Adds directional directional output from v230214 to horizontal and vertical lines - and fixes issues created with horizontal and vertical lines produced by v230214. Added color choices for overlays. Ra and Rq corrected relative to meanline.
-	v230301 Changed name of pArea/pPerimeter ratio and more cosmetic changes to Dialog 1.
+	v230301 Changed name of pArea/pPerimeter ratio and more cosmetic changes to Dialog 1. b) Output menu cosmetic changes.
+	v230303 Changed default spline fit for horizontal and vertical lines to 10% of pixels from 2% of perimeter
 */
-	macroL = "Unravel_interface_v230301.ijm";
+	macroL = "Unravel_interface_v230303.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -128,10 +129,10 @@
 	smoothKeep = false;
 	smoothN = 0;
 		Dialog.create("Unraveling options 2 \(" + macroL + "\)");
-		Dialog.addRadioButtonGroup("Output evaluation length \(used for map scale\):",refLengths,refLengths.length,1,refLengths[defRef]);
-		if (startsWith(objectType, "Solid")) defSmoothN = minOf(1000,round(pPerimeter/50)); /* median smoothing limited to max of 1000 */
-		else defSmoothN = minOf(1000,round(pArea/50)); /* median smoothing limited to max of 1000 */
+		Dialog.addRadioButtonGroup("Output evaluation length \(used for horizontal map scale\):",refLengths,refLengths.length,1,refLengths[defRef]);
 		if (!endsWith(objectType,"_line")){
+			if (startsWith(objectType, "Solid")) defSmoothN = minOf(1000,round(pPerimeter/50)); /* median smoothing limited to max of 1000 */
+			else defSmoothN = minOf(1000,round(pArea/50)); /* median smoothing limited to max of 1000 */
 			Dialog.addCheckbox("Create median smoothed object \(i.e. physical waviness\)",false);
 			Dialog.addNumber("Radius for median smoothing \(mean filter method\)",defSmoothN,0,4,"pixels \(max 1000\)");
 			if (startsWith(objectType, "Solid")) mText = "Default median radius of " + defSmoothN + " pixels based on 2% of original perimeter \(" + pPerimeter + " pixels\)";
@@ -140,14 +141,15 @@
 			Dialog.addMessage(mText);
 		}
 		else {
+			defSmoothN = minOf(1000,round(pArea/10));
 			Dialog.addNumber("Sub-sample interval for spline",defSmoothN,0,4,"pixels");
-			Dialog.addMessage("Default interval of " + defSmoothN + " pixels based on 2% of original pixels in line\n");
+			Dialog.addMessage("Default interval of " + defSmoothN + " pixels based on 10% of original "+pArea+" pixels in line\n");
 		}
 		iFitCol = indexOfArray(colorChoices,call("ij.Prefs.get", "asc_unravel.fit.col","screamin'_green"),2);
 		Dialog.addChoice("Overlay color for fits",colorChoices,colorChoices[iFitCol]);
 		/* Fewer outline-skeletonized pixels will be missed from the unravel sequence, so skeletonizing the line/outline is the default setting: */
 		Dialog.addCheckbox("Skeletonize outline/interface line \(could remove significant pixels\)",true); /* removes redundant pixels . . . but are they? */
-		Dialog.addCheckbox("Create pseudo-height map from interface",true);
+		Dialog.addCheckbox("Create pseudo-height map from interface that can be used in other software",true);
 		Dialog.addCheckbox("Diagnostics",false);
 	Dialog.show;
 		refLength = Dialog.getRadioButton();
@@ -214,8 +216,10 @@
 			Dialog.addCheckbox("Try to start clockwise?",true);
 			Dialog.addCheckbox("Output rotational sequence values",continuous);
 		}
-		Dialog.addCheckbox("Keep image showing pixel sequence and spline fit unless there are unsequnced pixels",true);
-		Dialog.addCheckbox("Use overlay to highlight unsequence pixel locations",true);
+		Dialog.addCheckbox("Keep pixel sequence and spline fit image",true);
+		Dialog.setInsets(-3, 15, 3);
+		Dialog.addMessage("Pixel sequence and spline fit image will always be\nkept if there are any unsequenced pixels");
+		Dialog.addCheckbox("Use overlay to highlight locations of unsequenced pixels",true);
 		iUSCol = indexOfArray(colorChoices,call("ij.Prefs.get", "asc_unravel.unseqpixels.col","dodger_blue"),0);
 		Dialog.addChoice("Overlay color for highlighting unsequenced pixels",colorChoices,colorChoices[iUSCol]);
 	Dialog.show;
@@ -436,7 +440,9 @@
 			Dialog.addRadioButtonGroup("Reference location for height and angles:",refLocs,refLocs.length,1,refLocs[1]);
 			Dialog.addNumber("Arbitrary x", 0,0,10,"pixels");
 			Dialog.addNumber("Arbitrary y", 0,0,10,"pixels");
-			Dialog.addString("Table compatible name for distance to reference \(i.e. 'Height'\)","Height",10);
+			Dialog.addString("Column name for distance to reference","Height",10);
+			Dialog.setInsets(-5, 20, 0);
+			Dialog.addMessage("Column name, i.e. 'Height', should be table compatible");
 		Dialog.show;
 			refLoc = Dialog.getRadioButton();
 			xRef = Dialog.getNumber();
@@ -572,17 +578,20 @@
 		else Table.setColumn(distName + "_norm^2",normRelDistSqs);
 	}
 	if (!endsWith(objectType,"_line")) clockwise = clockwiseIncr;
-	Dialog.create("Output and Height map options: " + macroL);
-		Dialog.addMessage(seqPixN + " interface pixels found");
-		Dialog.addCheckbox("Filter out direction discontinuity(no re-entrant surfaces)?",continuous);
+	Dialog.create("Directional filtering and height map options: " + macroL);
+		Dialog.addMessage(seqPixN + " sequential interface pixels found");
+		Dialog.addCheckbox("Filter out direction discontinuity (skip re-entrant surfaces)?",continuous);
 		/* if the unravelling points change direction they are ignored until the previous angular extent is exceeded */
+		Dialog.setInsets(-2, 40, 0); 
 		Dialog.addCheckbox("Re-normalize directional dataset as selected above",continuous);
+		Dialog.setInsets(-2, 40, 0);
 		Dialog.addCheckbox("Save directional dataset as selected above",continuous);
+		Dialog.setInsets(-2, 40, 0);
 		Dialog.addCheckbox("Identify filtered pixel set on sequence image",continuous);
 		iFiltCol = indexOfArray(colorChoices,call("ij.Prefs.get", "asc_unravel.filtered.col","outrageous_orange"),1);
 		Dialog.addChoice("Color for filtered pixel overlay",colorChoices,colorChoices[iFiltCol]);
 		if (hMap){
-			Dialog.addNumber("Evaluation length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
+			Dialog.addNumber("Eval. length \(from " + refLength + "\) to embed as horizontal scale:",lRef,10,14,unit);
 			Dialog.addNumber("Repeated lines to create 2D height map:",maxOf(50,round(seqPixN/10)),0,4,"rows");
 			Dialog.addNumber("Sub-sample measurements \(1 = none\):",maxOf(1,round(seqPixN/4000)),0,10,"");
 			Dialog.addCheckbox("Save height map \(should be saved as uncompressed TIFF\)",true);
