@@ -54,6 +54,14 @@ width="417" /> </p>
 <p>Enabling a comprehensive roughness analysis:</p>
 <p><img src="/images/Unravel_GwyddionAnalysis_1101w.png" alt="Gwyddion analysis of pseudo-height-map." 
 width="1101" /> </p>
+
+ <p> An example of how this macro can be used was published here: <br />
+S. Balachandran, D. B. Smathers, J. Kim, K. Sim, and P. J. Lee,
+ &quot;A Method for Measuring Interface Roughness from Cross-Sectional Micrographs,&quot; IEEE Transactions on Applied Superconductivity,
+ pp. 1-5, 2023, doi: <a href="https://doi.org/10.1109/TASC.2023.3250165">10.1109/TASC.2023.3250165</a>.
+</p>
+
+
 <br />
  <strong>Legal Notice:</strong> <br />
 These macros have been developed to demonstrate the power of the ImageJ macro language and we assume no 
