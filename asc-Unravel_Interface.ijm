@@ -18,9 +18,10 @@
 	v230214 Adds directional continuity flag to primary Results table, overlay display of filtered sequence, simple color options for overlays. Add zero degree start option and fixes disappearing Results window.
 	v230228 Adds directional directional output from v230214 to horizontal and vertical lines - and fixes issues created with horizontal and vertical lines produced by v230214. Added color choices for overlays. Ra and Rq corrected relative to meanline.
 	v230301 Changed name of pArea/pPerimeter ratio and more cosmetic changes to Dialog 1. b) Output menu cosmetic changes.
-	v230303 Changed default spline fit for horizontal and vertical lines to 10% of pixels from 2% of perimeter
+	v230303 Changed default spline fit for horizontal and vertical lines to 10% of pixels from 2% of perimeter.
+	v230306 Option to crop overlay output image back to original dimensions of input image and sets this as default.
 */
-	macroL = "Unravel_interface_v230303.ijm";
+	macroL = "Unravel_interface_v230306.ijm";
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -64,7 +65,7 @@
 		else objectType = "Something_else";
 	}
 	else if (pFArea/pArea<1.1 || oSolidity>0.5) objectType = "Solid_object";
-	if (objectType=="Solid_object") safeBuffer = round(pPerimeter/20);
+	if (objectType=="Solid_object") safeMargin = round(pPerimeter/40);
 	else {
 		run("Create Selection");
 		setOption("BlackBackground", false);
@@ -72,18 +73,20 @@
 		pPerimeter = getValue("Perim. raw");
 		pArea = getValue("Area raw");
 		run("Undo");
-		safeBuffer = round(pArea/20);
+		safeMargin = round(pArea/40);
 		run("Select None");
 	}
-	if (safeBuffer>oImageW && safeBuffer>oImageH) showMessage("Problem with safeBuffer size \(" + safeBuffer + "\), minimum border space = " + minBorder);
+	if (safeMargin>oImageW && safeMargin>oImageH) showMessage("Problem with safeMargin size \(" + safeMargin + "\), minimum border space = " + minBorder);
 	/* Make sure canvas is large enough to accommodate any smoothing or fits */
-	if (minX<safeBuffer/2 || (oImageW-(minX+widthS))<safeBuffer/2) newWidth = safeBuffer+oImageW;
+	if (minX<safeMargin || (oImageW-(minX+widthS))<safeMargin) newWidth = 2*safeMargin+oImageW;
 	else newWidth = oImageW;
-	if (minY<safeBuffer/2 || (oImageH-(minY+heightS))<safeBuffer/2) newHeight = safeBuffer+oImageH;
+	if (minY<safeMargin || (oImageH-(minY+heightS))<safeMargin) newHeight = 2*safeMargin+oImageH;
 	else newHeight = oImageH;
 	if (newHeight!=oImageH || newWidth!=oImageW)	expCanvas = true; /* Could use as a contraction flag for a future option */
 	else expCanvas = false;
 	if (expCanvas) run("Canvas Size...", "width=&newWidth height=&newHeight position=Center");
+	revertCanvas = expCanvas;
+	revertCoords = expCanvas;
 	run("Create Selection");
 	pX = round(getValue("X raw"));
 	pY = round(getValue("Y raw"));
@@ -97,11 +100,16 @@
 	colorChoicesNeon = newArray("jazzberry_jam", "radical_red", "wild_watermelon", "outrageous_orange", "supernova_orange", "atomic_tangerine", "neon_carrot", "sunglow", "laser_lemon", "electric_lime", "screamin'_green", "magic_mint", "blizzard_blue", "dodger_blue", "shocking_pink", "razzle_dazzle_rose", "hot_magenta");
 	colorChoices = Array.concat(colorChoicesStd, colorChoicesMod, colorChoicesNeon, grayChoices);
 	Dialog.create("Unraveling options 1: \(" + macroL + "\)");
-		message1 = "This macro currently only works on individual objects";
-		if(expCanvas) message1 += "\nThe working image has been expanded to accommodate curve fitting options";
-		Dialog.addMessage(message1);
+		Dialog.addMessage("This macro currently only works on individual objects",12,"#782F40");
+		if(expCanvas) Dialog.addMessage("The working image has been expanded to accommodate curve fitting options");
+		if(expCanvas){
+			Dialog.setInsets(-1, 20, 1);
+			Dialog.addCheckbox("Revert output canvas to original dimensions",revertCanvas);
+			Dialog.addCheckbox("Revert output coordinates to original coordinates",revertCoords);
+			Dialog.setInsets(15, 20, 5);
+		}
 		if(oChannels+oSlices+oFrames!=3) Dialog.addMessage("Warning: This macro has only been tested on single slice-frame-channel images",12,"red");
-		if (isOpen("Results")) Dialog.addCheckbox("Close open Results window?",true);
+		if (isOpen("Results")) Dialog.addCheckbox("Close the currently open Results window?",true);
 		Dialog.addRadioButtonGroup("Object type:",objectTypes,objectTypes.length,1,objectType);
 		message2 = "Identified object type: " + objectType + "       from:";
 		message2 += "\nTotal pixels:                   " + pArea + "\nBlack pixels after fill:   " + pFArea;
@@ -110,11 +118,14 @@
 		message2 += "\npPer.:pArea ratio:          " + pxPpxARatio;
 		Dialog.addMessage(message2);
 	Dialog.show;
-		closeOpenResults = Dialog.getCheckbox();
+		if(expCanvas){
+			revertCanvas = Dialog.getCheckbox();
+			revertCoords = Dialog.getCheckbox();
+		} 
+		if (isOpen("Results")){
+			if(Dialog.getCheckbox()) while (isOpen("Results")) close("Results");
+		} 
 		objectType = Dialog.getRadioButton();
-	if (closeOpenResults){
-		while (isOpen("Results")) close("Results");
-	}
 	if (objectType=="Something_else") exit("Sorry, I am not ready for 'something else' yet");
 	if (startsWith(objectType,"Continuous") || startsWith(objectType,"Solid")) continuous = true;
 	else continuous = false;
@@ -479,6 +490,7 @@
 	}
 	else exit("Unidentified reference location");
 	IJ.log("Reference locations: x = " + xRef + ", y = " + yRef);
+	if(revertCoords) IJ.log("\(Reference locations for original image: x = " + xRef-safeMargin + ", y = " + yRef-safeMargin + "\)");
 	if (!endsWith(objectType,"_line")){
 		radianAngles = newArray();
 		degreeAngles = newArray();
@@ -795,6 +807,10 @@
 		tCSV1 = nTitle + "_directional_outputCSV";
 		outputCSVPath = dir + tCSV1 +".csv";
 		updateResults();
+		if (revertCoords){
+			coords = newArray("Seq_coord_x","Seq_coord_y");
+			columnOperation(coords,coords,"-",safeMargin);
+		}
 		if(File.exists(outputCSVPath)){
 			 if(getBoolean("Overwrite " + tCSV1 +".csv?")) saveAs("Results", outputCSVPath);
 		}
@@ -829,6 +845,25 @@
 			keepPixelSequence = true;
 		}
 		else if(!diagnostics) close(tempID);
+	}
+	if(expCanvas){
+		if (revertCanvas){
+			if(isOpen(nTitle)){
+				selectWindow(nTitle);
+				run("Canvas Size...", "width=&oImageW height=&oImageH position=Center");
+			}
+			if (startsWith(refLength,"Median") || smoothKeep){
+				if (isOpen(medianT)){
+					selectWindow(medianT);
+					run("Canvas Size...", "width=&oImageW height=&oImageH position=Center");
+				}
+			}
+		}
+		if (revertCoords){
+			selectWindow("Results");
+			coords = newArray("Seq_coord_x","Seq_coord_y");
+			columnOperation(coords,coords,"-",safeMargin);
+		}
 	}
 	if (!diagnostics){
 		closeImageByTitle(refLTitle);
@@ -1048,6 +1083,17 @@
 			if (endsWith(string,unwantedSuffixes[i])) string = substring(string,0,sL-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
 		}
 		return string;
+	}
+	function columnOperation(columnNames,newColumnNames,operator,operand){
+		lFunction = "columnOperation_v230306";
+		coords = newArray("Seq_coord_x","Seq_coord_y");
+		if (columnNames.length!=newColumnNames.length) exit(lFunction + ": Unequal column name array lengths");
+		for(i=0;i<columnNames.length;i++){
+			formula = "" + columnNames[i] + operator + operand;
+			mCode = newColumnNames[i] + "=" + formula;
+			Table.applyMacro(mCode);
+		}
+		updateResults();
 	}
 	function toWhiteBGBinary(windowTitle) { /* For black objects on a white background */
 		/* Replaces binaryCheck function

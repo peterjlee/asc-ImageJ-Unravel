@@ -24,7 +24,7 @@ cross-section by the Unravel macro." height="51" /> </p>
 <br />
   <p>Sampling length is important for extracting roughness values and sample length can be derived from the 
 overall shape or the cumulative pixel=pixel distance:</p>
-<p><img src="/images/Unravel_Menu1_v230301_474w_PAL32.png" alt="Unravel menu 1" width="474" /> </p>
+<p><img src="/images/Unravel_Menu1_v230306_476w_PAL64.png" alt="Unravel menu 1" width="474" /> </p>
 
 <p>Evaluation lengths can be estimated for a variety of topologies:</p>
 
@@ -37,6 +37,10 @@ overall shape or the cumulative pixel=pixel distance:</p>
 <p>The reference location(s) for the 'height' measurements can be selected:</p>
 
 <p><img src="/images/Unravel_Menu-RefCoordinates_v230301_PAL64_379w.png" alt="Height referencing" width="379" /> </p>
+
+<p>The sequence can be filtered so that it is unidirectional so reentrant features are eliminated to approximate a stylus surface measurement:</p>
+
+<p><img src="/images/Unravel_Hz-line_Direction-filtered_494w.gif" alt="Height referencing" width="494" /> </p>
 
 <p>A pseudo-height map can be generated for import into dedicatedsurface analysis software:</p>
 
