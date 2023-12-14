@@ -20,9 +20,10 @@
 	v230301 Changed name of pArea/pPerimeter ratio and more cosmetic changes to Dialog 1. b) Output menu cosmetic changes.
 	v230303 Changed default spline fit for horizontal and vertical lines to 10% of pixels from 2% of perimeter.
 	v230306 Option to crop overlay output image back to original dimensions of input image and sets this as default.
-	f1-2: Updates stripKnownExtensionFromString function.
+	f1-2: Updates stripKnownExtensionFromString function. f3: Updates indexOf functions. F4: getColorArrayFromColorName_v230908. F8: Replaced function: pad.
 */
-	macroL = "Unravel_interface_v230306-f2.ijm";
+	macroL = "Unravel_interface_v230306-f8.ijm";
+	saveSettings(); /* required for restoreExit */
 	setBatchMode(true);
 	oTitle = getTitle;
 	oID = getImageID();
@@ -884,8 +885,12 @@
 		   v181017-8 added off-white and off-black for use in gif transparency and also added safe exit if no color match found
 		   v191211 added Cyan
 		   v211022 all names lower-case, all spaces to underscores v220225 Added more hash value comments as a reference v220706 restores missing magenta
-		   REQUIRES restoreExit function.  57 Colors v230130 Added more descriptions and modified order
+		   v230130 Added more descriptions and modified order.
+		   v230908: Returns "white" array if no match is found and logs issues without exiting.
+		     57 Colors 
 		*/
+		functionL = "getColorArrayFromColorName_v230911";
+		cA = newArray(255,255,255); /* defaults to white */
 		if (colorName == "white") cA = newArray(255,255,255);
 		else if (colorName == "black") cA = newArray(0,0,0);
 		else if (colorName == "off-white") cA = newArray(245,245,245);
@@ -898,29 +903,29 @@
 		else if (colorName == "gray") cA = newArray(127,127,127);
 		else if (colorName == "dark_gray") cA = newArray(51,51,51);
 		else if (colorName == "red") cA = newArray(255,0,0);
-		else if (colorName == "green") cA = newArray(0,255,0); /* #00FF00 AKA Lime green */
+		else if (colorName == "green") cA = newArray(0,255,0);					/* #00FF00 AKA Lime green */
 		else if (colorName == "blue") cA = newArray(0,0,255);
 		else if (colorName == "cyan") cA = newArray(0, 255, 255);
 		else if (colorName == "yellow") cA = newArray(255,255,0);
-		else if (colorName == "magenta") cA = newArray(255,0,255); /* #FF00FF */
+		else if (colorName == "magenta") cA = newArray(255,0,255);				/* #FF00FF */
 		else if (colorName == "pink") cA = newArray(255, 192, 203);
 		else if (colorName == "violet") cA = newArray(127,0,255);
 		else if (colorName == "orange") cA = newArray(255, 165, 0);
-		else if (colorName == "garnet") cA = newArray(120,47,64); /* #782F40 */
-		else if (colorName == "gold") cA = newArray(206,184,136); /* #CEB888 */
-		else if (colorName == "aqua_modern") cA = newArray(75,172,198); /* #4bacc6 AKA "Viking" aqua */
+		else if (colorName == "garnet") cA = newArray(120,47,64);				/* #782F40 */
+		else if (colorName == "gold") cA = newArray(206,184,136);				/* #CEB888 */
+		else if (colorName == "aqua_modern") cA = newArray(75,172,198);		/* #4bacc6 AKA "Viking" aqua */
 		else if (colorName == "blue_accent_modern") cA = newArray(79,129,189); /* #4f81bd */
-		else if (colorName == "blue_dark_modern") cA = newArray(31,73,125); /* #1F497D */
-		else if (colorName == "blue_honolulu") cA = newArray(0,118,182); /* Honolulu Blue #006db0 */
-		else if (colorName == "blue_modern") cA = newArray(58,93,174); /* #3a5dae */
-		else if (colorName == "gray_modern") cA = newArray(83,86,90); /* bright gray #53565A */
-		else if (colorName == "green_dark_modern") cA = newArray(121,133,65); /* Wasabi #798541 */
-		else if (colorName == "green_modern") cA = newArray(155,187,89); /* #9bbb59 AKA "Chelsea Cucumber" */
+		else if (colorName == "blue_dark_modern") cA = newArray(31,73,125);	/* #1F497D */
+		else if (colorName == "blue_honolulu") cA = newArray(0,118,182);		/* Honolulu Blue #006db0 */
+		else if (colorName == "blue_modern") cA = newArray(58,93,174);			/* #3a5dae */
+		else if (colorName == "gray_modern") cA = newArray(83,86,90);			/* bright gray #53565A */
+		else if (colorName == "green_dark_modern") cA = newArray(121,133,65);	/* Wasabi #798541 */
+		else if (colorName == "green_modern") cA = newArray(155,187,89);		/* #9bbb59 AKA "Chelsea Cucumber" */
 		else if (colorName == "green_modern_accent") cA = newArray(214,228,187); /* #D6E4BB AKA "Gin" */
-		else if (colorName == "green_spring_accent") cA = newArray(0,255,102); /* #00FF66 AKA "Spring Green" */
-		else if (colorName == "orange_modern") cA = newArray(247,150,70); /* #f79646 tan hide, light orange */
-		else if (colorName == "pink_modern") cA = newArray(255,105,180); /* hot pink #ff69b4 */
-		else if (colorName == "purple_modern") cA = newArray(128,100,162); /* blue-magenta, purple paradise #8064A2 */
+		else if (colorName == "green_spring_accent") cA = newArray(0,255,102);	/* #00FF66 AKA "Spring Green" */
+		else if (colorName == "orange_modern") cA = newArray(247,150,70);		/* #f79646 tan hide, light orange */
+		else if (colorName == "pink_modern") cA = newArray(255,105,180);		/* hot pink #ff69b4 */
+		else if (colorName == "purple_modern") cA = newArray(128,100,162);		/* blue-magenta, purple paradise #8064A2 */
 		else if (colorName == "jazzberry_jam") cA = newArray(165,11,94);
 		else if (colorName == "red_n_modern") cA = newArray(227,24,55);
 		else if (colorName == "red_modern") cA = newArray(192,80,77);
@@ -929,22 +934,22 @@
 		else if (colorName == "yellow_modern") cA = newArray(247,238,69);
 		/* Fluorescent Colors https://www.w3schools.com/colors/colors_crayola.asp */
 		else if (colorName == "radical_red") cA = newArray(255,53,94);			/* #FF355E */
-		else if (colorName == "wild_watermelon") cA = newArray(253,91,120);		/* #FD5B78 */
+		else if (colorName == "wild_watermelon") cA = newArray(253,91,120);	/* #FD5B78 */
 		else if (colorName == "shocking_pink") cA = newArray(255,110,255);		/* #FF6EFF Ultra Pink */
-		else if (colorName == "razzle_dazzle_rose") cA = newArray(238,52,210); 	/* #EE34D2 */
+		else if (colorName == "razzle_dazzle_rose") cA = newArray(238,52,210);	/* #EE34D2 */
 		else if (colorName == "hot_magenta") cA = newArray(255,0,204);			/* #FF00CC AKA Purple Pizzazz */
 		else if (colorName == "outrageous_orange") cA = newArray(255,96,55);	/* #FF6037 */
 		else if (colorName == "supernova_orange") cA = newArray(255,191,63);	/* FFBF3F Supernova Neon Orange*/
-		else if (colorName == "sunglow") cA = newArray(255,204,51); 			/* #FFCC33 */
-		else if (colorName == "neon_carrot") cA = newArray(255,153,51);			/* #FF9933 */
+		else if (colorName == "sunglow") cA = newArray(255,204,51);			/* #FFCC33 */
+		else if (colorName == "neon_carrot") cA = newArray(255,153,51);		/* #FF9933 */
 		else if (colorName == "atomic_tangerine") cA = newArray(255,153,102);	/* #FF9966 */
-		else if (colorName == "laser_lemon") cA = newArray(255,255,102); 		/* #FFFF66 "Unmellow Yellow" */
-		else if (colorName == "electric_lime") cA = newArray(204,255,0); 		/* #CCFF00 */
-		else if (colorName == "screamin'_green") cA = newArray(102,255,102); 	/* #66FF66 */
-		else if (colorName == "magic_mint") cA = newArray(170,240,209); 		/* #AAF0D1 */
-		else if (colorName == "blizzard_blue") cA = newArray(80,191,230); 		/* #50BFE6 Malibu */
+		else if (colorName == "laser_lemon") cA = newArray(255,255,102);		/* #FFFF66 "Unmellow Yellow" */
+		else if (colorName == "electric_lime") cA = newArray(204,255,0);		/* #CCFF00 */
+		else if (colorName == "screamin'_green") cA = newArray(102,255,102);	/* #66FF66 */
+		else if (colorName == "magic_mint") cA = newArray(170,240,209);		/* #AAF0D1 */
+		else if (colorName == "blizzard_blue") cA = newArray(80,191,230);		/* #50BFE6 Malibu */
 		else if (colorName == "dodger_blue") cA = newArray(9,159,255);			/* #099FFF Dodger Neon Blue */
-		else restoreExit("No color match to " + colorName);
+		else IJ.log(colorName + " not found in " + functionL + ": Color defaulted to white");
 		return cA;
 	}
 	function setBackgroundFromColorName(colorName) {
@@ -960,17 +965,13 @@
 		setForegroundColor(colorArray[0], colorArray[1], colorArray[2]);
 	}
 	/* Hex conversion below adapted from T.Ferreira, 20010.01 https://imagej.net/doku.php?id=macro:rgbtohex */
-	function pad(n) {
-	  /* This version by Tiago Ferreira 6/6/2022 eliminates the toString macro function */
-	  if (lengthOf(n)==1) n= "0"+n; return n;
-	  if (lengthOf(""+n)==1) n= "0"+n; return n;
-	}
 	function getHexColorFromColorName(colorNameString) {
+		/* v231207: Uses IJ String.pad instead of function: pad */
 		colorArray = getColorArrayFromColorName(colorNameString);
 		 r = toHex(colorArray[0]); g = toHex(colorArray[1]); b = toHex(colorArray[2]);
-		 hexName= "#" + ""+pad(r) + ""+pad(g) + ""+pad(b);
+		 hexName= "#" + "" + String.pad(r, 2) + "" + String.pad(g, 2) + "" + String.pad(b, 2);
 		 return hexName;
-	}
+	}	
 /*	
 	( 8(|))  ( 8(|))  ( 8(|))  ASC Functions  @@@@@:-)  @@@@@:-)  @@@@@:-)
 */
@@ -1027,8 +1028,9 @@
 		}
 	}
 	function indexOfArray(array, value, default) {
-		/* v190423 Adds "default" parameter (use -1 for backwards compatibility). Returns only first found value */
-		index = default;
+		/* v190423 Adds "default" parameter (use -1 for backwards compatibility). Returns only first found value
+			v230902 Limits default value to array size */
+		index = minOf(lengthOf(array) - 1, default);
 		for (i=0; i<lengthOf(array); i++){
 			if (array[i]==value) {
 				index = i;
@@ -1047,16 +1049,11 @@
 	}
 	function stripKnownExtensionFromString(string) {
 		/*	Note: Do not use on path as it may change the directory names
-		v210924: Tries to make sure string stays as string
-		v211014: Adds some additional cleanup
-		v211025: fixes multiple knowns issue
-		v211101: Added ".Ext_" removal
-		v211104: Restricts cleanup to end of string to reduce risk of corrupting path
-		v211112: Tries to fix trapped extension before channel listing. Adds xlsx extension.
-		v220615: Tries to fix the fix for the trapped extensions ...
-		v230504: Protects directory path if included in string. Only removes doubled spaces and lines.
-		v230505: Unwanted dupes replaced by unusefulCombos.
-		v230607: Quick fix for infinite loop on one of while statements.
+		v210924: Tries to make sure string stays as string.	v211014: Adds some additional cleanup.	v211025: fixes multiple 'known's issue.	v211101: Added ".Ext_" removal.
+		v211104: Restricts cleanup to end of string to reduce risk of corrupting path.	v211112: Tries to fix trapped extension before channel listing. Adds xlsx extension.
+		v220615: Tries to fix the fix for the trapped extensions ...	v230504: Protects directory path if included in string. Only removes doubled spaces and lines.
+		v230505: Unwanted dupes replaced by unusefulCombos.	v230607: Quick fix for infinite loop on one of while statements.
+		v230614: Added AVI.	v230905: Better fix for infinite loop. v230914: Added BMP and "_transp" and rearranged
 		*/
 		fS = File.separator;
 		string = "" + string;
@@ -1073,26 +1070,27 @@
 			}
 		}
 		if (lastIndexOf(string, ".")>0 || lastIndexOf(string, "_lzw")>0) {
-			knownExt = newArray("dsx", "DSX", "tif", "tiff", "TIF", "TIFF", "png", "PNG", "GIF", "gif", "jpg", "JPG", "jpeg", "JPEG", "jp2", "JP2", "txt", "TXT", "csv", "CSV","xlsx","XLSX");
-			kEL = knownExt.length;
-			chanLabels = newArray("\(red\)","\(green\)","\(blue\)");
+			knownExts = newArray(".avi", ".csv", ".bmp", ".dsx", ".gif", ".jpg", ".jpeg", ".jp2", ".png", ".tif", ".txt", ".xlsx");
+			knownExts = Array.concat(knownExts,knownExts,"_transp","_lzw");
+			kEL = knownExts.length;
+			for (i=0; i<kEL/2; i++) knownExts[i] = toUpperCase(knownExts[i]);
+			chanLabels = newArray(" \(red\)"," \(green\)"," \(blue\)","\(red\)","\(green\)","\(blue\)");
 			for (i=0,k=0; i<kEL; i++) {
-				kExtn = "." + knownExt[i];
-				for (j=0; j<3; j++){ /* Looking for channel-label-trapped extensions */
+				for (j=0; j<chanLabels.length; j++){ /* Looking for channel-label-trapped extensions */
 					iChanLabels = lastIndexOf(string, chanLabels[j])-1;
 					if (iChanLabels>0){
 						preChan = substring(string,0,iChanLabels);
 						postChan = substring(string,iChanLabels);
-						while (indexOf(preChan,kExtn)>=0 && k<10){  /* k counter quick fix for infinite loop */
-							string = replace(preChan,kExtn,"") + postChan;
-							k++;
+						while (indexOf(preChan,knownExts[i])>0){
+							preChan = replace(preChan,knownExts[i],"");
+							string =  preChan + postChan;
 						}
 					}
 				}
-				while (endsWith(string,kExtn)) string = "" + substring(string, 0, lastIndexOf(string, kExtn));
+				while (endsWith(string,knownExts[i])) string = "" + substring(string, 0, lastIndexOf(string, knownExts[i]));
 			}
 		}
-		unwantedSuffixes = newArray("_lzw"," ", "_","-");
+		unwantedSuffixes = newArray(" ", "_","-");
 		for (i=0; i<unwantedSuffixes.length; i++){
 			while (endsWith(string,unwantedSuffixes[i])) string = substring(string,0,string.length-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
 		}
@@ -1144,27 +1142,28 @@
 	+ v220128 add loops that allow removal of multiple duplication.
 	+ v220131 fixed so that suffix cleanup works even if extensions are included.
 	+ v220616 Minor index range fix that does not seem to have an impact if macro is working as planned. v220715 added 8-bit to unwanted dupes. v220812 minor changes to micron and Ångström handling
+	+ v231005 Replaced superscript abbreviations that did not work.
 	*/
 		/* Remove bad characters */
-		string= replace(string, fromCharCode(178), "\\^2"); /* superscript 2 */
-		string= replace(string, fromCharCode(179), "\\^3"); /* superscript 3 UTF-16 (decimal) */
-		string= replace(string, fromCharCode(0xFE63) + fromCharCode(185), "\\^-1"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
-		string= replace(string, fromCharCode(0xFE63) + fromCharCode(178), "\\^-2"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
-		string= replace(string, fromCharCode(181)+"m", "um"); /* micron units */
-		string= replace(string, getInfo("micrometer.abbreviation"), "um"); /* micron units */
-		string= replace(string, fromCharCode(197), "Angstrom"); /* Ångström unit symbol */
-		string= replace(string, fromCharCode(0x212B), "Angstrom"); /* the other Ångström unit symbol */
-		string= replace(string, fromCharCode(0x2009) + fromCharCode(0x00B0), "deg"); /* replace thin spaces degrees combination */
-		string= replace(string, fromCharCode(0x2009), "_"); /* Replace thin spaces  */
-		string= replace(string, "%", "pc"); /* % causes issues with html listing */
-		string= replace(string, " ", "_"); /* Replace spaces - these can be a problem with image combination */
+		string = string.replace(fromCharCode(178), "sup2"); /* superscript 2 */
+		string = string.replace(fromCharCode(179), "sup3"); /* superscript 3 UTF-16 (decimal) */
+		string = string.replace(fromCharCode(0xFE63) + fromCharCode(185), "sup-1"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
+		string = string.replace(fromCharCode(0xFE63) + fromCharCode(178), "sup-2"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
+		string = string.replace(fromCharCode(181)+"m", "um"); /* micron units */
+		string = string.replace(getInfo("micrometer.abbreviation"), "um"); /* micron units */
+		string = string.replace(fromCharCode(197), "Angstrom"); /* Ångström unit symbol */
+		string = string.replace(fromCharCode(0x212B), "Angstrom"); /* the other Ångström unit symbol */
+		string = string.replace(fromCharCode(0x2009) + fromCharCode(0x00B0), "deg"); /* replace thin spaces degrees combination */
+		string = string.replace(fromCharCode(0x2009), "_"); /* Replace thin spaces  */
+		string = string.replace("%", "pc"); /* % causes issues with html listing */
+		string = string.replace(" ", "_"); /* Replace spaces - these can be a problem with image combination */
 		/* Remove duplicate strings */
 		unwantedDupes = newArray("8bit","8-bit","lzw");
 		for (i=0; i<lengthOf(unwantedDupes); i++){
 			iLast = lastIndexOf(string,unwantedDupes[i]);
 			iFirst = indexOf(string,unwantedDupes[i]);
 			if (iFirst!=iLast) {
-				string = substring(string,0,iFirst) + substring(string,iFirst + lengthOf(unwantedDupes[i]));
+				string = string.substring(0,iFirst) + string.substring(iFirst + lengthOf(unwantedDupes[i]));
 				i=-1; /* check again */
 			}
 		}
@@ -1172,11 +1171,11 @@
 		for (i=0; i<lengthOf(unwantedDbls); i++){
 			iFirst = indexOf(string,unwantedDbls[i]);
 			if (iFirst>=0) {
-				string = substring(string,0,iFirst) + substring(string,iFirst + lengthOf(unwantedDbls[i])/2);
+				string = string.substring(0,iFirst) + string.substring(string,iFirst + lengthOf(unwantedDbls[i])/2);
 				i=-1; /* check again */
 			}
 		}
-		string= replace(string, "_\\+", "\\+"); /* Clean up autofilenames */
+		string = string.replace("_\\+", "\\+"); /* Clean up autofilenames */
 		/* cleanup suffixes */
 		unwantedSuffixes = newArray(" ","_","-","\\+"); /* things you don't wasn't to end a filename with */
 		extStart = lastIndexOf(string,".");
