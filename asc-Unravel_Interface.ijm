@@ -20,9 +20,9 @@
 	v230301 Changed name of pArea/pPerimeter ratio and more cosmetic changes to Dialog 1. b) Output menu cosmetic changes.
 	v230303 Changed default spline fit for horizontal and vertical lines to 10% of pixels from 2% of perimeter.
 	v230306 Option to crop overlay output image back to original dimensions of input image and sets this as default.
-	f1-2: Updates stripKnownExtensionFromString function. f3: Updates indexOf functions. F4: getColorArrayFromColorName_v230908. F8: Replaced function: pad.
+	f1-2: Updates stripKnownExtensionFromString function. f3: Updates indexOf functions. F4: getColorArrayFromColorName_v230908. F8: Replaced function: pad. F9: Updated getColorFromColorName function (012324). F10: updated function unCleanLabel.
 */
-	macroL = "Unravel_interface_v230306-f8.ijm";
+	macroL = "Unravel_interface_v230306-f10.ijm";
 	saveSettings(); /* required for restoreExit */
 	setBatchMode(true);
 	oTitle = getTitle;
@@ -1143,13 +1143,14 @@
 	+ v220131 fixed so that suffix cleanup works even if extensions are included.
 	+ v220616 Minor index range fix that does not seem to have an impact if macro is working as planned. v220715 added 8-bit to unwanted dupes. v220812 minor changes to micron and Ångström handling
 	+ v231005 Replaced superscript abbreviations that did not work.
+	+ v240124 Replace _+_ with +.
 	*/
 		/* Remove bad characters */
 		string = string.replace(fromCharCode(178), "sup2"); /* superscript 2 */
 		string = string.replace(fromCharCode(179), "sup3"); /* superscript 3 UTF-16 (decimal) */
 		string = string.replace(fromCharCode(0xFE63) + fromCharCode(185), "sup-1"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
 		string = string.replace(fromCharCode(0xFE63) + fromCharCode(178), "sup-2"); /* Small hyphen substituted for superscript minus as 0x207B does not display in table */
-		string = string.replace(fromCharCode(181)+"m", "um"); /* micron units */
+		string = string.replace(fromCharCode(181) + "m", "um"); /* micron units */
 		string = string.replace(getInfo("micrometer.abbreviation"), "um"); /* micron units */
 		string = string.replace(fromCharCode(197), "Angstrom"); /* Ångström unit symbol */
 		string = string.replace(fromCharCode(0x212B), "Angstrom"); /* the other Ångström unit symbol */
@@ -1158,33 +1159,34 @@
 		string = string.replace("%", "pc"); /* % causes issues with html listing */
 		string = string.replace(" ", "_"); /* Replace spaces - these can be a problem with image combination */
 		/* Remove duplicate strings */
-		unwantedDupes = newArray("8bit","8-bit","lzw");
+		unwantedDupes = newArray("8bit", "8-bit", "lzw");
 		for (i=0; i<lengthOf(unwantedDupes); i++){
-			iLast = lastIndexOf(string,unwantedDupes[i]);
-			iFirst = indexOf(string,unwantedDupes[i]);
+			iLast = lastIndexOf(string, unwantedDupes[i]);
+			iFirst = indexOf(string, unwantedDupes[i]);
 			if (iFirst!=iLast) {
-				string = string.substring(0,iFirst) + string.substring(iFirst + lengthOf(unwantedDupes[i]));
-				i=-1; /* check again */
+				string = string.substring(0, iFirst) + string.substring(iFirst + lengthOf(unwantedDupes[i]));
+				i = -1; /* check again */
 			}
 		}
-		unwantedDbls = newArray("_-","-_","__","--","\\+\\+");
+		unwantedDbls = newArray("_-", "-_", "__", "--", "\\+\\+");
 		for (i=0; i<lengthOf(unwantedDbls); i++){
-			iFirst = indexOf(string,unwantedDbls[i]);
+			iFirst = indexOf(string, unwantedDbls[i]);
 			if (iFirst>=0) {
-				string = string.substring(0,iFirst) + string.substring(string,iFirst + lengthOf(unwantedDbls[i])/2);
-				i=-1; /* check again */
+				string = string.substring(0, iFirst) + string.substring(string, iFirst + lengthOf(unwantedDbls[i]) / 2);
+				i = -1; /* check again */
 			}
 		}
 		string = string.replace("_\\+", "\\+"); /* Clean up autofilenames */
+		string = string.replace("\\+_", "\\+"); /* Clean up autofilenames */
 		/* cleanup suffixes */
-		unwantedSuffixes = newArray(" ","_","-","\\+"); /* things you don't wasn't to end a filename with */
-		extStart = lastIndexOf(string,".");
+		unwantedSuffixes = newArray(" ", "_", "-", "\\+"); /* things you don't wasn't to end a filename with */
+		extStart = lastIndexOf(string, ".");
 		sL = lengthOf(string);
 		if (sL-extStart<=4 && extStart>0) extIncl = true;
 		else extIncl = false;
 		if (extIncl){
-			preString = substring(string,0,extStart);
-			extString = substring(string,extStart);
+			preString = substring(string, 0, extStart);
+			extString = substring(string, extStart);
 		}
 		else {
 			preString = string;
@@ -1192,12 +1194,12 @@
 		}
 		for (i=0; i<lengthOf(unwantedSuffixes); i++){
 			sL = lengthOf(preString);
-			if (endsWith(preString,unwantedSuffixes[i])) {
-				preString = substring(preString,0,sL-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
+			if (endsWith(preString, unwantedSuffixes[i])) {
+				preString = substring(preString, 0, sL-lengthOf(unwantedSuffixes[i])); /* cleanup previous suffix */
 				i=-1; /* check one more time */
 			}
 		}
-		if (!endsWith(preString,"_lzw") && !endsWith(preString,"_lzw.")) preString = replace(preString, "_lzw", ""); /* Only want to keep this if it is at the end */
+		if (!endsWith(preString, "_lzw") && !endsWith(preString, "_lzw.")) preString = replace(preString, "_lzw", ""); /* Only want to keep this if it is at the end */
 		string = preString + extString;
 		/* End of suffix cleanup */
 		return string;
